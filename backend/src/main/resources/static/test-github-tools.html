@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Tools Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .result {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            border-left: 4px solid #f44336;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .badge.success { background-color: #4CAF50; color: white; }
+        .badge.error { background-color: #f44336; color: white; }
+        .badge.info { background-color: #2196F3; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🧪 GitHub Tools Test Suite</h1>
+    <p>Test the new atomic GitHub tools: Clone, Scan, and Read</p>
+
+    <!-- Complete Workflow Test -->
+    <div class="test-section">
+        <h2>1. Complete Workflow Test <span class="badge info">Clone → Scan → Read</span></h2>
+        <p>Tests all three tools in sequence with a real Angular repository</p>
+        <input type="text" id="workflowRepoUrl" placeholder="GitHub Repository URL (e.g., https://github.com/angular/angular)"
+               value="https://github.com/angular/angular">
+        <button onclick="testWorkflow()">Test Complete Workflow</button>
+        <div id="workflowResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- Individual Tool Tests -->
+    <div class="test-section">
+        <h2>2. Test Clone Tool <span class="badge info">github.clone</span></h2>
+        <p>Clone a GitHub repository to local filesystem</p>
+        <input type="text" id="cloneRepoUrl" placeholder="GitHub Repository URL"
+               value="https://github.com/angular/angular">
+        <button onclick="testClone()">Clone Repository</button>
+        <div id="cloneResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Test Scan Tool <span class="badge info">github.scanComponents</span></h2>
+        <p>Scan a cloned repository for Angular components</p>
+        <input type="text" id="scanLocalPath" placeholder="Local path from clone result (e.g., C:/Temp/agentivy/angular-123456)">
+        <button onclick="testScan()">Scan Components</button>
+        <div id="scanResult" class="result" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Test Read Tool <span class="badge info">github.readFiles</span></h2>
+        <p>Read component files (TypeScript, HTML, CSS)</p>
+        <input type="text" id="readTsPath" placeholder="TypeScript path from scan result">
+        <input type="text" id="readTemplatePath" placeholder="Template path (optional)">
+        <input type="text" id="readStylesPath" placeholder="Styles path (optional)">
+        <button onclick="testRead()">Read Files</button>
+        <div id="readResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- Tool Info -->
+    <div class="test-section">
+        <h2>5. Tool Metadata <span class="badge info">Tool Registry Info</span></h2>
+        <button onclick="getToolInfo()">Get Tools Info</button>
+        <div id="infoResult" class="result" style="display:none;"></div>
+    </div>
+
+    <script>
+        async function testWorkflow() {
+            const repoUrl = document.getElementById('workflowRepoUrl').value;
+            const resultDiv = document.getElementById('workflowResult');
+
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Testing complete workflow... This may take a minute.';
+
+            try {
+                const response = await fetch(`/api/test/github/workflow?repoUrl=${encodeURIComponent(repoUrl)}`);
+                const data = await response.json();
+
+                resultDiv.className = data.overallStatus === 'success' ? 'result success' : 'result error';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function testClone() {
+            const repoUrl = document.getElementById('cloneRepoUrl').value;
+            const resultDiv = document.getElementById('cloneResult');
+
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Cloning repository...';
+
+            try {
+                const response = await fetch('/api/test/github/clone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repoUrl })
+                });
+                const data = await response.json();
+
+                resultDiv.className = data.status === 'success' ? 'result success' : 'result error';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+
+                // Auto-fill scan path if successful
+                if (data.status === 'success' && data.localPath) {
+                    document.getElementById('scanLocalPath').value = data.localPath;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function testScan() {
+            const localPath = document.getElementById('scanLocalPath').value;
+            const resultDiv = document.getElementById('scanResult');
+
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Scanning for components...';
+
+            try {
+                const response = await fetch('/api/test/github/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ localPath })
+                });
+                const data = await response.json();
+
+                resultDiv.className = data.status === 'success' ? 'result success' : 'result error';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+
+                // Auto-fill read paths if successful
+                if (data.status === 'success' && data.components && data.components.length > 0) {
+                    const firstComponent = data.components[0];
+                    document.getElementById('readTsPath').value = firstComponent.typescriptPath || '';
+                    document.getElementById('readTemplatePath').value = firstComponent.templatePath || '';
+                    document.getElementById('readStylesPath').value = firstComponent.stylesPath || '';
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function testRead() {
+            const typescriptPath = document.getElementById('readTsPath').value;
+            const templatePath = document.getElementById('readTemplatePath').value;
+            const stylesPath = document.getElementById('readStylesPath').value;
+            const resultDiv = document.getElementById('readResult');
+
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Reading component files...';
+
+            try {
+                const response = await fetch('/api/test/github/read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ typescriptPath, templatePath, stylesPath })
+                });
+                const data = await response.json();
+
+                resultDiv.className = data.status === 'success' ? 'result success' : 'result error';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function getToolInfo() {
+            const resultDiv = document.getElementById('infoResult');
+
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Loading tool metadata...';
+
+            try {
+                const response = await fetch('/api/test/github/info');
+                const data = await response.json();
+
+                resultDiv.className = 'result success';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

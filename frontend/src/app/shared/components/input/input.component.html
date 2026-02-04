@@ -1,0 +1,37 @@
+<div [class]="wrapperClasses()">
+  @if (label()) {
+    <label [for]="inputId" class="input-label">
+      {{ label() }}
+      @if (required()) {
+        <span class="input-label__required">*</span>
+      }
+    </label>
+  }
+
+  <input
+    [id]="inputId"
+    [class]="inputClasses()"
+    [type]="type()"
+    [placeholder]="placeholder()"
+    [value]="value()"
+    [disabled]="disabled()"
+    [required]="required()"
+    [attr.aria-invalid]="error() ? 'true' : 'false'"
+    [attr.aria-describedby]="error() ? inputId + '-error' : null"
+    (input)="onInputChange($event)"
+    (blur)="onBlur()"
+    (focus)="onFocus()"
+  />
+
+  @if (error()) {
+    <div [id]="inputId + '-error'" class="input-error" role="alert">
+      {{ error() }}
+    </div>
+  }
+
+  @if (helperText() && !error()) {
+    <div class="input-helper">
+      {{ helperText() }}
+    </div>
+  }
+</div>

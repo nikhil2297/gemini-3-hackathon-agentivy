@@ -1,0 +1,29 @@
+<div class="code-block">
+  @if (showCopyButton()) {
+    <button
+      class="code-block__copy-btn"
+      (click)="copyToClipboard()"
+      [attr.aria-label]="copied() ? 'Copied!' : 'Copy code'"
+      type="button"
+    >
+      @if (copied()) {
+        <span class="code-block__copy-icon">✓</span>
+        <span>Copied!</span>
+      } @else {
+        <span class="code-block__copy-icon">⧉</span>
+        <span>Copy</span>
+      }
+    </button>
+  }
+
+  <div class="code-block__content" [style.max-height]="maxHeight()">
+    @if (showLineNumbers()) {
+      <div class="code-block__lines">
+        @for (line of getCodeLines(); track $index) {
+          <div class="code-block__line-number">{{ $index + 1 }}</div>
+        }
+      </div>
+    }
+    <pre class="code-block__pre"><code class="code-block__code" [attr.data-language]="language()">{{ code() }}</code></pre>
+  </div>
+</div>

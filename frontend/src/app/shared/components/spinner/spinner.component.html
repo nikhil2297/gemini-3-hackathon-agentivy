@@ -1,0 +1,26 @@
+<div class="spinner-wrapper">
+  @if (variant() === 'typing') {
+    <div class="typing-indicator" [class]="'typing-indicator--' + size()">
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    </div>
+  } @else {
+    <div class="circular-spinner" [class]="'circular-spinner--' + size()" role="status" aria-live="polite">
+      <svg class="spinner-svg" viewBox="0 0 50 50">
+        <circle
+          class="spinner-circle"
+          cx="25"
+          cy="25"
+          r="20"
+          fill="none"
+          stroke-width="4"
+        ></circle>
+      </svg>
+    </div>
+  }
+
+  @if (message()) {
+    <p class="spinner-message">{{ message() }}</p>
+  }
+</div>

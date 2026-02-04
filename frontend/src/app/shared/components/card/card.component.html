@@ -1,0 +1,19 @@
+<div class="card">
+  @if (title() || subtitle()) {
+    <div class="card__header">
+      @if (title()) {
+        <h3 class="card__title">{{ title() }}</h3>
+      }
+      @if (subtitle()) {
+        <p class="card__subtitle">{{ subtitle() }}</p>
+      }
+      <ng-content select="[header]"></ng-content>
+    </div>
+  }
+
+  <div class="card__body" [class.card__body--no-padding]="noPadding()">
+    <ng-content></ng-content>
+  </div>
+
+  <ng-content select="[footer]"></ng-content>
+</div>

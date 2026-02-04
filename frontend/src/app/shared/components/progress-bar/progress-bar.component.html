@@ -1,0 +1,22 @@
+<div class="progress-bar-wrapper">
+  @if (label()) {
+    <div class="progress-bar-header">
+      <span class="progress-bar-label">{{ label() }}</span>
+      @if (showPercentage() && !indeterminate()) {
+        <span class="progress-bar-percentage">{{ percentage() }}%</span>
+      }
+    </div>
+  }
+
+  <div
+    class="progress-bar"
+    [class.progress-bar--indeterminate]="indeterminate()"
+    role="progressbar"
+    [attr.aria-valuenow]="indeterminate() ? null : percentage()"
+    [attr.aria-valuemin]="0"
+    [attr.aria-valuemax]="100"
+    [attr.aria-label]="label() || 'Progress'"
+  >
+    <div class="progress-bar__fill" [style.width]="widthStyle()"></div>
+  </div>
+</div>

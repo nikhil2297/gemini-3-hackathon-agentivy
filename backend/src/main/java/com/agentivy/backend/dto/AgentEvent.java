@@ -1,5 +1,6 @@
 package com.agentivy.backend.dto;
 
+import java.util.List;
 import java.util.Map;
 
 public sealed interface AgentEvent permits
@@ -10,7 +11,11 @@ public sealed interface AgentEvent permits
     AgentEvent.ComponentStatus,
     AgentEvent.FixSuggestion,
     AgentEvent.Completed,
-    AgentEvent.Error {
+    AgentEvent.Error,
+    AgentEvent.WorkflowStarted,
+    AgentEvent.WorkflowComponentResult,
+    AgentEvent.WorkflowSummaryEvent,
+    AgentEvent.WorkflowDone {
 
     record Started(
         String sessionId,
@@ -76,6 +81,44 @@ public sealed interface AgentEvent permits
     record Error(
         String message,
         String phase,
+        long timestamp
+    ) implements AgentEvent {}
+
+    // --- New Workflow Events for Enhanced SSE Flow ---
+
+    /**
+     * Emitted at the start of a workflow to indicate total components and test types.
+     */
+    record WorkflowStarted(
+        String message,
+        int totalComponents,
+        List<String> tests,
+        long timestamp
+    ) implements AgentEvent {}
+
+    /**
+     * Emitted after all tests for a single component are complete.
+     * Contains full scored results for accessibility and performance.
+     */
+    record WorkflowComponentResult(
+        WorkflowResult.ComponentTestResult result,
+        long timestamp
+    ) implements AgentEvent {}
+
+    /**
+     * Emitted after all components are processed.
+     * Contains the final summary with overall scores and per-component breakdowns.
+     */
+    record WorkflowSummaryEvent(
+        WorkflowResult.WorkflowSummary summary,
+        long timestamp
+    ) implements AgentEvent {}
+
+    /**
+     * Emitted as the final event to signal workflow completion.
+     */
+    record WorkflowDone(
+        String message,
         long timestamp
     ) implements AgentEvent {}
 }

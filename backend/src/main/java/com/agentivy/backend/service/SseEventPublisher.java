@@ -1,11 +1,13 @@
 package com.agentivy.backend.service;
 
 import com.agentivy.backend.dto.AgentEvent;
+import com.agentivy.backend.dto.WorkflowResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -217,6 +219,76 @@ public class SseEventPublisher {
         ));
     }
 
+    // --- New Workflow Event Publishers ---
+
+    /**
+     * Publish a progress event with step numbers.
+     */
+    public void publishProgress(String sessionId, String message, String phase, int currentStep, int totalSteps) {
+        publishEvent(sessionId, new AgentEvent.Progress(
+            message,
+            phase,
+            currentStep,
+            totalSteps,
+            System.currentTimeMillis()
+        ));
+    }
+
+    /**
+     * Publish a workflow started event.
+     */
+    public void publishWorkflowStarted(String sessionId, String message, int totalComponents, List<String> tests) {
+        publishEvent(sessionId, new AgentEvent.WorkflowStarted(
+            message,
+            totalComponents,
+            tests,
+            System.currentTimeMillis()
+        ));
+    }
+
+    /**
+     * Publish a workflow component result event.
+     */
+    public void publishWorkflowComponentResult(String sessionId, WorkflowResult.ComponentTestResult result) {
+        publishEvent(sessionId, new AgentEvent.WorkflowComponentResult(
+            result,
+            System.currentTimeMillis()
+        ));
+    }
+
+    /**
+     * Publish a workflow summary event.
+     */
+    public void publishWorkflowSummary(String sessionId, WorkflowResult.WorkflowSummary summary) {
+        publishEvent(sessionId, new AgentEvent.WorkflowSummaryEvent(
+            summary,
+            System.currentTimeMillis()
+        ));
+    }
+
+    /**
+     * Publish a workflow done event and complete all emitters.
+     */
+    public void publishWorkflowDone(String sessionId, String message) {
+        publishEvent(sessionId, new AgentEvent.WorkflowDone(
+            message,
+            System.currentTimeMillis()
+        ));
+
+        // Complete all emitters for this session
+        CopyOnWriteArrayList<SseEmitter> emitters = sessionEmitters.get(sessionId);
+        if (emitters != null) {
+            for (SseEmitter emitter : emitters) {
+                try {
+                    emitter.complete();
+                } catch (Exception e) {
+                    log.error("Error completing emitter for session: {}", sessionId, e);
+                }
+            }
+            sessionEmitters.remove(sessionId);
+        }
+    }
+
     /**
      * Get event name for SSE event type.
      */
@@ -230,6 +302,10 @@ public class SseEventPublisher {
             case AgentEvent.FixSuggestion fs -> "fix_suggestion";
             case AgentEvent.Completed comp -> "completed";
             case AgentEvent.Error e -> "error";
+            case AgentEvent.WorkflowStarted ws -> "start";
+            case AgentEvent.WorkflowComponentResult wcr -> "component-result";
+            case AgentEvent.WorkflowSummaryEvent wse -> "summary";
+            case AgentEvent.WorkflowDone wd -> "done";
         };
     }
 

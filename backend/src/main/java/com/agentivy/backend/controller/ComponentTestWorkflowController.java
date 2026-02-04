@@ -1,5 +1,7 @@
 package com.agentivy.backend.controller;
 
+import com.agentivy.backend.dto.WorkflowResult;
+import com.agentivy.backend.util.ScoringUtils;
 import com.agentivy.backend.tools.harness.deployer.HarnessDeployerTool;
 import com.agentivy.backend.tools.harness.generator.HarnessCodeGeneratorTool;
 import com.agentivy.backend.tools.harness.metadata.ComponentMetadataExtractorTool;
@@ -18,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -466,20 +469,10 @@ public class ComponentTestWorkflowController {
                 return false;
             }
 
-            // Check accessibility violations
-            if (entry.getKey().equals("accessibility")) {
-                int violations = (int) result.getOrDefault("totalViolations", 0);
-                if (violations > 0) {
-                    return false;
-                }
-            }
-
-            // Check performance warnings
-            if (entry.getKey().equals("performance")) {
-                List<String> warnings = (List<String>) result.getOrDefault("warnings", List.of());
-                if (!warnings.isEmpty()) {
-                    return false;
-                }
+            // Check the "passed" field set by each test tool via ScoringUtils
+            Object passed = result.get("passed");
+            if (passed instanceof Boolean && !(Boolean) passed) {
+                return false;
             }
         }
 
@@ -578,17 +571,14 @@ public class ComponentTestWorkflowController {
     @PostMapping(value = "/suggest-fixes", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter suggestFixesPost(@RequestBody SuggestFixesRequest request) {
         String sessionId = "suggest-fixes-" + System.currentTimeMillis();
+        int componentCount = request.component() != null ? request.component().size() : 0;
         log.info("Starting SSE stream for fix suggestions (POST): repoPath={}, repoId={}, components={}, sessionId={}",
-            request.repoPath(), request.repoId(),
-            request.component() != null ? request.component().size() : 0, sessionId);
+            request.repoPath(), request.repoId(), componentCount, sessionId);
 
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L); // 30 minute timeout
 
         // Register emitter with publisher
         sseEventPublisher.registerEmitter(sessionId, emitter);
-
-        // Send initial "started" event
-        sseEventPublisher.publishStarted(sessionId, request.repoPath());
 
         // Execute workflow asynchronously
         CompletableFuture.runAsync(() -> {
@@ -596,22 +586,33 @@ public class ComponentTestWorkflowController {
                 // Set session context for this thread
                 SessionContext.setSessionId(sessionId);
 
-                sseEventPublisher.publishProgress(sessionId,
-                    "Initializing test workflow for " +
-                    (request.component() != null && !request.component().isEmpty()
-                        ? request.component().size() + " component(s)"
-                        : "all components"),
-                    "initializing");
-
                 // Get tests array, default to ["accessibility"] if not provided
                 List<String> testList = request.tests() != null && !request.tests().isEmpty()
                     ? request.tests()
                     : List.of("accessibility");
 
+                // Send "start" event with total components and test types
+                sseEventPublisher.publishWorkflowStarted(sessionId,
+                    "Starting analysis for " + componentCount + " component(s)",
+                    componentCount,
+                    testList);
+
+                // Collect results for all components
+                List<WorkflowResult.ComponentTestResult> componentResults = new ArrayList<>();
+
                 // Process components from request body
                 if (request.component() != null && !request.component().isEmpty()) {
-                    for (SuggestFixesRequest.ComponentInfo comp : request.component()) {
-                        testAndSuggestFixesForComponent(
+                    for (int i = 0; i < request.component().size(); i++) {
+                        SuggestFixesRequest.ComponentInfo comp = request.component().get(i);
+
+                        // Emit progress event with "1/3" format
+                        sseEventPublisher.publishProgress(sessionId,
+                            "Testing " + comp.name(),
+                            "testing",
+                            i + 1,
+                            request.component().size());
+
+                        WorkflowResult.ComponentTestResult result = testAndSuggestFixesForComponent(
                             sessionId,
                             request.repoPath(),
                             comp.name(),
@@ -619,17 +620,29 @@ public class ComponentTestWorkflowController {
                             comp.tsPath(),
                             comp.htmlPath(),
                             comp.stylesPath(),
-                            comp.relativePath()
+                            comp.relativePath(),
+                            i,
+                            request.component().size()
                         );
+
+                        if (result != null) {
+                            componentResults.add(result);
+
+                            // Emit component-result event
+                            sseEventPublisher.publishWorkflowComponentResult(sessionId, result);
+                        }
                     }
                 } else {
                     testAndSuggestFixesForAllComponents(sessionId, request.repoPath(), testList);
                 }
 
-                // Complete the stream
-                sseEventPublisher.publishCompleted(sessionId,
-                    "Fix suggestions generation completed",
-                    Map.of("sessionId", sessionId, "status", "completed"));
+                // Build and emit final summary
+                WorkflowResult.WorkflowSummary summary = buildWorkflowSummary(
+                    request.repoId(), componentResults, testList);
+                sseEventPublisher.publishWorkflowSummary(sessionId, summary);
+
+                // Emit done event and complete emitters
+                sseEventPublisher.publishWorkflowDone(sessionId, "Analysis complete");
 
             } catch (Exception e) {
                 log.error("Fix suggestion workflow failed", e);
@@ -644,18 +657,22 @@ public class ComponentTestWorkflowController {
 
     /**
      * Test a specific component and generate fix suggestions.
+     * Returns a ComponentTestResult with scored results for all test types.
      */
-    private void testAndSuggestFixesForComponent(String sessionId, String repoPath,
-                                                  String componentClassName, List<String> testList,
-                                                  String providedTsPath, String providedHtmlPath,
-                                                  String providedStylesPath, String providedRelativePath) {
+    private WorkflowResult.ComponentTestResult testAndSuggestFixesForComponent(
+            String sessionId, String repoPath,
+            String componentClassName, List<String> testList,
+            String providedTsPath, String providedHtmlPath,
+            String providedStylesPath, String providedRelativePath,
+            int componentIndex, int totalComponents) {
         try {
             // Set current component in session context
             SessionContext.setCurrentComponent(componentClassName);
 
-            sseEventPublisher.publishProgress(sessionId,
+            sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                "metadata", "starting",
                 "Extracting metadata for " + componentClassName,
-                "metadata_extraction");
+                Map.of());
 
             // Step 1: Extract component metadata
             ImmutableMap<String, Object> metadataResult = metadataExtractor
@@ -667,7 +684,7 @@ public class ComponentTestWorkflowController {
                     "metadata", "failed",
                     "Failed to extract metadata: " + metadataResult.get("message"),
                     Map.of());
-                return;
+                return null;
             }
 
             String componentSelector = (String) metadataResult.get("selector");
@@ -679,9 +696,10 @@ public class ComponentTestWorkflowController {
                 Map.of("selector", componentSelector, "importPath", importPath));
 
             // Step 2: Generate harness code
-            sseEventPublisher.publishProgress(sessionId,
+            sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                "harness", "starting",
                 "Generating test harness for " + componentClassName,
-                "harness_generation");
+                Map.of());
 
             ImmutableMap<String, Object> codeResult = codeGenerator
                 .generateHarnessCode(componentClassName, componentSelector, importPath, "", "", "", "")
@@ -692,7 +710,7 @@ public class ComponentTestWorkflowController {
                     "harness", "failed",
                     "Failed to generate harness: " + codeResult.get("message"),
                     Map.of());
-                return;
+                return null;
             }
 
             String generatedCode = (String) codeResult.get("code");
@@ -702,9 +720,10 @@ public class ComponentTestWorkflowController {
                 Map.of("codeLength", generatedCode.length()));
 
             // Step 3: Deploy harness
-            sseEventPublisher.publishProgress(sessionId,
+            sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                "deployment", "starting",
                 "Deploying test harness",
-                "harness_deployment");
+                Map.of());
 
             ImmutableMap<String, Object> deployResult = deployer
                 .deployHarness(repoPath, generatedCode)
@@ -715,13 +734,14 @@ public class ComponentTestWorkflowController {
                     "deployment", "failed",
                     "Failed to deploy harness: " + deployResult.get("message"),
                     Map.of());
-                return;
+                return null;
             }
 
             // Step 4: Start dev server
-            sseEventPublisher.publishProgress(sessionId,
+            sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                "dev-server", "starting",
                 "Starting Angular dev server",
-                "server_startup");
+                Map.of());
 
             ImmutableMap<String, Object> serverResult = devServer
                 .prepareAndStartServer(repoPath, 4200)
@@ -732,14 +752,12 @@ public class ComponentTestWorkflowController {
                     "dev-server", "failed",
                     "Failed to start server: " + serverResult.get("message"),
                     Map.of());
-                return;
+                return null;
             }
 
-            // Get the harness URL from the server result (not componentUrl which doesn't exist)
+            // Get the harness URL from the server result
             String harnessUrl = (String) serverResult.get("harnessUrl");
             String serverUrl = (String) serverResult.get("serverUrl");
-
-            // Build component URL: harnessUrl + component selector query parameter
             String componentUrl = harnessUrl + "?component=" + componentSelector;
 
             sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
@@ -751,17 +769,30 @@ public class ComponentTestWorkflowController {
                     "harnessUrl", harnessUrl != null ? harnessUrl : ""
                 ));
 
-            // Step 5: Run tests and generate suggestions
+            // Step 5: Run tests and generate suggestions, collecting TestResults
+            WorkflowResult.TestResult accessibilityResult = null;
+            WorkflowResult.TestResult performanceResult = null;
+
             for (String testType : testList) {
-                generateFixSuggestions(sessionId, componentClassName, componentUrl,
+                WorkflowResult.TestResult testResult = generateFixSuggestions(
+                    sessionId, componentClassName, componentUrl,
                     componentSelector, testType, repoPath, metadataResult,
                     providedTsPath, providedHtmlPath, providedStylesPath, providedRelativePath);
+
+                if (testResult != null) {
+                    if ("accessibility".equals(testType)) {
+                        accessibilityResult = testResult;
+                    } else if ("performance".equals(testType)) {
+                        performanceResult = testResult;
+                    }
+                }
             }
 
             // Step 6: Stop server
-            sseEventPublisher.publishProgress(sessionId,
+            sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                "dev-server", "stopping",
                 "Stopping dev server",
-                "cleanup");
+                Map.of());
 
             devServer.stopServer(repoPath).blockingGet();
 
@@ -770,13 +801,41 @@ public class ComponentTestWorkflowController {
                 "Server stopped",
                 Map.of());
 
+            // Build ComponentInfo
+            String fullName = providedRelativePath != null
+                ? providedRelativePath + "/" + componentClassName
+                : componentClassName;
+
+            WorkflowResult.ComponentInfo compInfo = new WorkflowResult.ComponentInfo(
+                componentClassName,
+                providedRelativePath,
+                fullName,
+                providedTsPath,
+                providedHtmlPath,
+                providedStylesPath
+            );
+
+            return new WorkflowResult.ComponentTestResult(compInfo, accessibilityResult, performanceResult);
+
         } catch (Exception e) {
             log.error("Failed to test component: {}", componentClassName, e);
             sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
                 "test", "failed",
                 "Error during testing: " + e.getMessage(),
                 Map.of());
+            return null;
         }
+    }
+
+    /**
+     * Overloaded version for the GET endpoint (backward compatibility).
+     */
+    private void testAndSuggestFixesForComponent(String sessionId, String repoPath,
+                                                  String componentClassName, List<String> testList,
+                                                  String providedTsPath, String providedHtmlPath,
+                                                  String providedStylesPath, String providedRelativePath) {
+        testAndSuggestFixesForComponent(sessionId, repoPath, componentClassName, testList,
+            providedTsPath, providedHtmlPath, providedStylesPath, providedRelativePath, 0, 1);
     }
 
     /**
@@ -795,8 +854,9 @@ public class ComponentTestWorkflowController {
 
     /**
      * Generate fix suggestions for a specific test type.
+     * Returns a WorkflowResult.TestResult with scored results and grouped-by-file details.
      */
-    private void generateFixSuggestions(String sessionId, String componentName, String componentUrl,
+    private WorkflowResult.TestResult generateFixSuggestions(String sessionId, String componentName, String componentUrl,
                                          String componentSelector, String testType, String repoPath,
                                          ImmutableMap<String, Object> metadata, String providedTsPath,
                                          String providedHtmlPath, String providedStylesPath, String providedRelativePath) {
@@ -813,86 +873,82 @@ public class ComponentTestWorkflowController {
                     .blockingGet();
 
                 if ("success".equals(testResult.get("status"))) {
-                    // AccessibilityTestingTool returns "allViolations" directly, not wrapped in "results"
                     List<Map<String, Object>> violations = (List<Map<String, Object>>) testResult.get("allViolations");
-
-                    // Handle null violations list
                     if (violations == null) {
                         violations = List.of();
                     }
 
+                    // Get severity counts from the test result
+                    Map<String, Integer> severityCounts = (Map<String, Integer>) testResult.get("severityCounts");
+                    int critical = severityCounts != null ? severityCounts.getOrDefault("critical", 0) : 0;
+                    int serious = severityCounts != null ? severityCounts.getOrDefault("serious", 0) : 0;
+                    int moderate = severityCounts != null ? severityCounts.getOrDefault("moderate", 0) : 0;
+                    int minor = severityCounts != null ? severityCounts.getOrDefault("minor", 0) : 0;
+
+                    // Calculate weighted score
+                    int score = ScoringUtils.calculateWeightedScore(critical, serious, moderate, minor);
+                    String status = ScoringUtils.statusFromScore(score);
+
                     sseEventPublisher.publishComponentStatus(sessionId, componentName,
                         testType, "completed",
-                        violations.size() + " accessibility violations found",
-                        Map.of("violationCount", violations.size()));
+                        violations.size() + " accessibility violations found (score: " + score + ", status: " + status + ")",
+                        Map.of("violationCount", violations.size(), "score", score, "status", status));
 
-                    // Generate suggestions for each violation
+                    // Build violation counts
+                    WorkflowResult.ViolationCounts violationCounts = new WorkflowResult.ViolationCounts(
+                        critical, serious, moderate, minor, violations.size());
+
+                    // Grouped-by-file details
+                    List<WorkflowResult.FileIssues> details;
+
+                    // Generate AI suggestions if there are violations
                     if (!violations.isEmpty()) {
-                        // Publish in-progress event to let frontend know we're generating fixes
                         sseEventPublisher.publishComponentStatus(sessionId, componentName,
                             "accessibility-fix", "in-progress",
                             "Generating AI-powered fix suggestions for " + violations.size() + " violation(s)...",
                             Map.of("violationCount", violations.size()));
 
-                        // Use the fixer tool to generate suggestions (but don't apply them)
-                        // Priority: 1) metadata paths, 2) provided paths from API, 3) null
+                        // Resolve file paths: priority metadata > provided
                         String tsPath = (String) metadata.get("tsPath");
                         String htmlPath = (String) metadata.get("htmlPath");
                         String stylesPath = (String) metadata.get("stylesPath");
 
-                        // Fall back to provided paths if metadata doesn't have them
-                        if (tsPath == null && providedTsPath != null) {
-                            tsPath = providedTsPath;
-                            log.info("Using provided tsPath for {}: {}", componentName, tsPath);
-                        }
-                        if (htmlPath == null && providedHtmlPath != null) {
-                            htmlPath = providedHtmlPath;
-                            log.info("Using provided htmlPath for {}: {}", componentName, htmlPath);
-                        }
-                        if (stylesPath == null && providedStylesPath != null) {
-                            stylesPath = providedStylesPath;
-                            log.info("Using provided stylesPath for {}: {}", componentName, stylesPath);
-                        }
+                        if (tsPath == null && providedTsPath != null) tsPath = providedTsPath;
+                        if (htmlPath == null && providedHtmlPath != null) htmlPath = providedHtmlPath;
+                        if (stylesPath == null && providedStylesPath != null) stylesPath = providedStylesPath;
 
-                        // Log the file paths to help diagnose missing source code issues
                         log.info("File paths for {}: tsPath={}, htmlPath={}, stylesPath={}", componentName, tsPath, htmlPath, stylesPath);
-                        if (tsPath == null || htmlPath == null) {
-                            log.warn("Missing file paths for {}. AI will generate generic fixes without seeing actual source code.", componentName);
-                        }
 
                         ImmutableMap<String, Object> fixSuggestionResult = accessibilityFixer
                             .suggestFixes(repoPath, componentName, tsPath, htmlPath, stylesPath, violations)
                             .blockingGet();
 
+                        // Build grouped-by-file details with AI suggestions
                         if ("success".equals(fixSuggestionResult.get("status"))) {
                             String suggestedFix = (String) fixSuggestionResult.get("suggestedFix");
                             String explanation = (String) fixSuggestionResult.get("explanation");
 
-                            // Publish fix suggestion event
-                            sseEventPublisher.publishFixSuggestion(
-                                sessionId,
-                                componentName,
-                                "accessibility",
-                                Map.of("violations", violations, "violationCount", violations.size()),
-                                suggestedFix,
-                                explanation,
-                                htmlPath,
-                                violations.size() > 5 ? 3 : violations.size() > 2 ? 2 : 1 // severity based on count
-                            );
+                            details = groupViolationsByFile(violations, htmlPath, tsPath, stylesPath, explanation);
 
-                            // Publish completed status
                             sseEventPublisher.publishComponentStatus(sessionId, componentName,
                                 "accessibility-fix", "completed",
                                 "Fix suggestions generated successfully",
-                                Map.of("fixGenerated", true));
+                                Map.of("fixGenerated", true, "score", score));
                         } else {
-                            // Publish failed status if fix generation failed
+                            details = groupViolationsByFile(violations, htmlPath, tsPath, stylesPath, null);
                             sseEventPublisher.publishComponentStatus(sessionId, componentName,
                                 "accessibility-fix", "failed",
                                 "Failed to generate fix suggestions: " + fixSuggestionResult.get("message"),
                                 Map.of());
                         }
+                    } else {
+                        details = List.of();
                     }
+
+                    return new WorkflowResult.TestResult(
+                        status, score, violationCounts,
+                        WorkflowResult.PassThreshold.defaultThreshold(),
+                        details);
                 }
             } else if (testType.equals("performance")) {
                 // Run performance test
@@ -905,73 +961,79 @@ public class ComponentTestWorkflowController {
                     Map<String, Object> metrics = (Map<String, Object>) testResult.get("metrics");
                     List<String> warnings = (List<String>) testResult.get("warnings");
 
-                    // Handle null cases
-                    if (metrics == null) {
-                        metrics = Map.of();
+                    if (metrics == null) metrics = Map.of();
+                    if (warnings == null) warnings = List.of();
+
+                    // Use existing performance score (already 0-100)
+                    Object perfScoreObj = testResult.get("performanceScore");
+                    int perfScore = perfScoreObj instanceof Number ? ((Number) perfScoreObj).intValue() : 100;
+                    String status = ScoringUtils.performanceStatusFromScore(perfScore);
+
+                    // Categorize warnings by severity for ViolationCounts
+                    // Performance warnings don't have built-in severity, so estimate based on warning content
+                    int perfCritical = 0, perfSerious = 0, perfModerate = 0, perfMinor = 0;
+                    for (String warning : warnings) {
+                        String lower = warning.toLowerCase();
+                        if (lower.contains("memory leak") || lower.contains("blocking") || lower.contains("infinite")) {
+                            perfCritical++;
+                        } else if (lower.contains("excessive") || lower.contains("large") || lower.contains("no lazy")) {
+                            perfSerious++;
+                        } else if (lower.contains("missing") || lower.contains("trackby") || lower.contains("change detection")) {
+                            perfModerate++;
+                        } else {
+                            perfMinor++;
+                        }
                     }
-                    if (warnings == null) {
-                        warnings = List.of();
-                    }
+
+                    WorkflowResult.ViolationCounts violationCounts = new WorkflowResult.ViolationCounts(
+                        perfCritical, perfSerious, perfModerate, perfMinor, warnings.size());
 
                     sseEventPublisher.publishComponentStatus(sessionId, componentName,
                         testType, "completed",
-                        warnings.size() + " performance warnings found",
-                        Map.of("warningCount", warnings.size(), "metrics", metrics));
+                        warnings.size() + " performance warnings found (score: " + perfScore + ", status: " + status + ")",
+                        Map.of("warningCount", warnings.size(), "score", perfScore, "status", status));
 
-                    // Generate performance fix suggestions if there are warnings
+                    // Grouped-by-file details for performance
+                    List<WorkflowResult.FileIssues> details;
+
                     if (!warnings.isEmpty()) {
-                        // Publish in-progress event to let frontend know we're generating fixes
                         sseEventPublisher.publishComponentStatus(sessionId, componentName,
                             "performance-fix", "in-progress",
                             "Generating AI-powered fix suggestions for " + warnings.size() + " warning(s)...",
                             Map.of("warningCount", warnings.size()));
 
                         String tsPath = (String) metadata.get("tsPath");
-
-                        // Fall back to provided tsPath if metadata doesn't have it
-                        if (tsPath == null && providedTsPath != null) {
-                            tsPath = providedTsPath;
-                            log.info("Using provided tsPath for performance fixes in {}: {}", componentName, tsPath);
-                        }
+                        if (tsPath == null && providedTsPath != null) tsPath = providedTsPath;
 
                         log.info("TypeScript path for performance fixes in {}: {}", componentName, tsPath);
-                        if (tsPath == null) {
-                            log.warn("Missing TypeScript path for {}. AI will generate generic performance fixes.", componentName);
-                        }
 
                         ImmutableMap<String, Object> fixSuggestionResult = performanceFixer
                             .suggestFixes(repoPath, componentName, tsPath, warnings, metrics)
                             .blockingGet();
 
                         if ("success".equals(fixSuggestionResult.get("status"))) {
-                            String suggestedFix = (String) fixSuggestionResult.get("suggestedFix");
                             String explanation = (String) fixSuggestionResult.get("explanation");
+                            details = groupPerformanceWarningsByFile(warnings, tsPath, explanation);
 
-                            // Publish fix suggestion event
-                            sseEventPublisher.publishFixSuggestion(
-                                sessionId,
-                                componentName,
-                                "performance",
-                                Map.of("warnings", warnings, "metrics", metrics),
-                                suggestedFix,
-                                explanation,
-                                tsPath,
-                                warnings.size() > 3 ? 3 : warnings.size() > 1 ? 2 : 1 // severity based on count
-                            );
-
-                            // Publish completed status
                             sseEventPublisher.publishComponentStatus(sessionId, componentName,
                                 "performance-fix", "completed",
                                 "Fix suggestions generated successfully",
-                                Map.of("fixGenerated", true));
+                                Map.of("fixGenerated", true, "score", perfScore));
                         } else {
-                            // Publish failed status if fix generation failed
+                            details = groupPerformanceWarningsByFile(warnings, tsPath, null);
                             sseEventPublisher.publishComponentStatus(sessionId, componentName,
                                 "performance-fix", "failed",
                                 "Failed to generate fix suggestions: " + fixSuggestionResult.get("message"),
                                 Map.of());
                         }
+                    } else {
+                        details = List.of();
                     }
+
+                    return new WorkflowResult.TestResult(
+                        status, perfScore, violationCounts,
+                        WorkflowResult.PassThreshold.defaultThreshold(),
+                        details);
                 }
             }
 
@@ -982,6 +1044,223 @@ public class ComponentTestWorkflowController {
                 "Error: " + e.getMessage(),
                 Map.of());
         }
+
+        return null;
+    }
+
+    /**
+     * Group accessibility violations by file for the details structure.
+     * Axe-core violations are grouped under the HTML file by default,
+     * since axe tests the rendered DOM.
+     * Enhanced to include actionable fix information from nodes.
+     */
+    private List<WorkflowResult.FileIssues> groupViolationsByFile(
+            List<Map<String, Object>> violations,
+            String htmlPath, String tsPath, String stylesPath,
+            String aiSuggestion) {
+
+        Map<String, List<WorkflowResult.IssueDetail>> fileMap = new LinkedHashMap<>();
+
+        String primaryFile = htmlPath != null
+            ? Path.of(htmlPath).getFileName().toString()
+            : "component.html";
+
+        for (Map<String, Object> violation : violations) {
+            String id = (String) violation.get("id");
+            String impact = (String) violation.getOrDefault("impact", "unknown");
+            String help = (String) violation.getOrDefault("help", "");
+
+            // Use the new enhanced 'nodes' structure instead of 'affectedNodes'
+            Object nodesObj = violation.get("nodes");
+            List<Map<String, Object>> nodes = (nodesObj instanceof List)
+                ? (List<Map<String, Object>>) nodesObj
+                : List.of();
+
+            if (!nodes.isEmpty()) {
+                for (Map<String, Object> node : nodes) {
+                    String element = (String) node.getOrDefault("html", "");
+
+                    // Extract actionable details from the node
+                    Map<String, Object> actionableDetails = new HashMap<>();
+
+                    // Include violation type
+                    if (node.containsKey("violationType")) {
+                        actionableDetails.put("violationType", node.get("violationType"));
+                    }
+
+                    // Include fix suggestions
+                    if (node.containsKey("suggestedFix")) {
+                        actionableDetails.put("suggestedFix", node.get("suggestedFix"));
+                    }
+                    if (node.containsKey("howToFix")) {
+                        actionableDetails.put("howToFix", node.get("howToFix"));
+                    }
+                    if (node.containsKey("exampleFix")) {
+                        actionableDetails.put("exampleFix", node.get("exampleFix"));
+                    }
+
+                    // Color contrast specific details
+                    if (node.containsKey("foregroundColor")) {
+                        actionableDetails.put("foregroundColor", node.get("foregroundColor"));
+                        actionableDetails.put("backgroundColor", node.get("backgroundColor"));
+                        actionableDetails.put("contrastRatio", node.get("contrastRatio"));
+                        actionableDetails.put("expectedRatio", node.get("expectedRatio"));
+                        if (node.containsKey("cssClass")) {
+                            actionableDetails.put("cssClass", node.get("cssClass"));
+                        }
+                        if (node.containsKey("suggestedColorOptions")) {
+                            actionableDetails.put("suggestedColorOptions", node.get("suggestedColorOptions"));
+                        }
+                    }
+
+                    // Missing attributes
+                    if (node.containsKey("missingAttribute")) {
+                        actionableDetails.put("missingAttribute", node.get("missingAttribute"));
+                    }
+                    if (node.containsKey("missingAttributes")) {
+                        actionableDetails.put("missingAttributes", node.get("missingAttributes"));
+                    }
+
+                    // Invalid attributes/values
+                    if (node.containsKey("currentTabindex")) {
+                        actionableDetails.put("currentTabindex", node.get("currentTabindex"));
+                    }
+                    if (node.containsKey("whyBad")) {
+                        actionableDetails.put("whyBad", node.get("whyBad"));
+                    }
+
+                    // WCAG guideline
+                    if (node.containsKey("wcagGuideline")) {
+                        actionableDetails.put("wcagGuideline", node.get("wcagGuideline"));
+                    }
+
+                    // Target selector
+                    if (node.containsKey("target")) {
+                        actionableDetails.put("target", node.get("target"));
+                    }
+
+                    // Failure messages
+                    if (node.containsKey("failureMessages")) {
+                        actionableDetails.put("failureMessages", node.get("failureMessages"));
+                    }
+
+                    WorkflowResult.IssueDetail issue = new WorkflowResult.IssueDetail(
+                        id, impact, 0, element, help, actionableDetails);
+                    fileMap.computeIfAbsent(primaryFile, k -> new ArrayList<>()).add(issue);
+                }
+            } else {
+                // No nodes, still record the violation with basic info
+                WorkflowResult.IssueDetail issue = new WorkflowResult.IssueDetail(
+                    id, impact, 0, "", help, Map.of());
+                fileMap.computeIfAbsent(primaryFile, k -> new ArrayList<>()).add(issue);
+            }
+        }
+
+        return fileMap.entrySet().stream()
+            .map(e -> new WorkflowResult.FileIssues(e.getKey(), e.getValue()))
+            .toList();
+    }
+
+    /**
+     * Group performance warnings by file.
+     * Performance warnings are primarily TS-related, so they are grouped under the TS file.
+     */
+    private List<WorkflowResult.FileIssues> groupPerformanceWarningsByFile(
+            List<String> warnings, String tsPath, String aiSuggestion) {
+
+        String primaryFile = tsPath != null
+            ? Path.of(tsPath).getFileName().toString()
+            : "component.ts";
+
+        List<WorkflowResult.IssueDetail> issues = new ArrayList<>();
+        for (String warning : warnings) {
+            // Determine severity based on warning content
+            String severity;
+            String lower = warning.toLowerCase();
+            if (lower.contains("memory leak") || lower.contains("blocking") || lower.contains("infinite")) {
+                severity = "critical";
+            } else if (lower.contains("excessive") || lower.contains("large") || lower.contains("no lazy")) {
+                severity = "serious";
+            } else if (lower.contains("missing") || lower.contains("trackby") || lower.contains("change detection")) {
+                severity = "moderate";
+            } else {
+                severity = "minor";
+            }
+
+            issues.add(new WorkflowResult.IssueDetail(
+                "performance-warning", severity, 0, "", warning));
+        }
+
+        if (issues.isEmpty()) {
+            return List.of();
+        }
+
+        return List.of(new WorkflowResult.FileIssues(primaryFile, issues));
+    }
+
+    /**
+     * Build the final workflow summary from all component results.
+     */
+    private WorkflowResult.WorkflowSummary buildWorkflowSummary(
+            String repoId,
+            List<WorkflowResult.ComponentTestResult> componentResults,
+            List<String> testList) {
+
+        int totalComponents = componentResults.size();
+        Map<String, WorkflowResult.TestSummary> testSummaries = new LinkedHashMap<>();
+        List<WorkflowResult.ComponentScoreEntry> componentScores = new ArrayList<>();
+
+        String overallStatus = "pass";
+
+        for (String testType : testList) {
+            int sumScore = 0;
+            int count = 0;
+            int passed = 0, warned = 0, failed = 0;
+
+            for (WorkflowResult.ComponentTestResult cr : componentResults) {
+                WorkflowResult.TestResult tr = "accessibility".equals(testType)
+                    ? cr.accessibility() : cr.performance();
+                if (tr == null) continue;
+
+                count++;
+                sumScore += tr.score();
+                switch (tr.status()) {
+                    case "pass" -> passed++;
+                    case "warning" -> warned++;
+                    case "fail" -> failed++;
+                }
+                overallStatus = ScoringUtils.worstStatus(overallStatus, tr.status());
+            }
+
+            int avgScore = count > 0 ? sumScore / count : 0;
+            String testStatus = ScoringUtils.statusFromScore(avgScore);
+
+            testSummaries.put(testType, new WorkflowResult.TestSummary(
+                testStatus, avgScore, passed, warned, failed));
+        }
+
+        // Build component score entries
+        for (WorkflowResult.ComponentTestResult cr : componentResults) {
+            WorkflowResult.ScoreStatus a11y = cr.accessibility() != null
+                ? new WorkflowResult.ScoreStatus(cr.accessibility().score(), cr.accessibility().status())
+                : null;
+            WorkflowResult.ScoreStatus perf = cr.performance() != null
+                ? new WorkflowResult.ScoreStatus(cr.performance().score(), cr.performance().status())
+                : null;
+
+            componentScores.add(new WorkflowResult.ComponentScoreEntry(
+                cr.component().fullName(), a11y, perf));
+        }
+
+        // Overall score = average of all test type average scores
+        int overallScore = testSummaries.values().stream()
+            .mapToInt(WorkflowResult.TestSummary::averageScore)
+            .sum() / Math.max(1, testSummaries.size());
+
+        WorkflowResult.Summary summary = new WorkflowResult.Summary(
+            totalComponents, overallStatus, overallScore, testSummaries, componentScores);
+
+        return new WorkflowResult.WorkflowSummary(repoId, summary);
     }
 
     @PostMapping("/stop-server")

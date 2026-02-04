@@ -194,7 +194,7 @@ public class PerformanceFixerTool implements ToolProvider {
             String metrics) {
 
         return String.format("""
-            You are an Angular performance expert. Fix the performance issues in this component.
+            You are an Angular performance expert. Analyze the component code below, identify all performance issues, and return the fixed code. Apply the optimizations directly in the code you return.
 
             Component: %s
 
@@ -266,7 +266,7 @@ public class PerformanceFixerTool implements ToolProvider {
 
             IMPORTANT:
             - Include ALL original code, not just changes. Return complete files.
-            - Be aggressive with optimizations - this component has serious performance problems.
+            - Return the complete fixed files with all optimizations applied.
             - Add OnPush change detection strategy
             - Implement ngOnDestroy with proper cleanup
             - Fix all memory leaks and subscriptions
@@ -447,7 +447,7 @@ public class PerformanceFixerTool implements ToolProvider {
 
                 // Build prompt for AI to generate suggestions
                 StringBuilder prompt = new StringBuilder();
-                prompt.append("Analyze the following Angular component and suggest performance optimizations.\n\n");
+                prompt.append("Analyze the following Angular component. For each performance issue, explain what the issue is and suggest how to fix it with reference to the specific code. Do NOT imply that any fixes have been applied. You are only providing suggestions.\n\n");
                 prompt.append("Component: ").append(componentClassName).append("\n\n");
 
                 if (!tsContent.isEmpty()) {
@@ -469,12 +469,13 @@ public class PerformanceFixerTool implements ToolProvider {
                 prompt.append("\n");
 
                 prompt.append("Provide:\n");
-                prompt.append("1. A clear explanation of the performance issues and why they occur\n");
-                prompt.append("2. Specific optimizations needed (OnPush strategy, trackBy, unsubscribe, etc.)\n");
-                prompt.append("3. The complete optimized code\n\n");
+                prompt.append("1. A clear explanation of each performance issue and why it occurs\n");
+                prompt.append("2. Suggested code changes that would resolve each issue (reference specific files and lines)\n");
+                prompt.append("3. Explain WHY each change is needed\n\n");
+                prompt.append("IMPORTANT: You are only suggesting fixes, NOT applying them. Do NOT say 'I have corrected' or 'I have fixed'. Use language like 'The issue is...' and 'To fix this, you should...'\n\n");
                 prompt.append("Format your response as:\n");
-                prompt.append("EXPLANATION:\n[Your explanation here]\n\n");
-                prompt.append("SUGGESTED_CODE:\n```typescript\n[Optimized TypeScript code]\n```\n");
+                prompt.append("EXPLANATION:\n[Your explanation of issues and suggested fixes here]\n\n");
+                prompt.append("SUGGESTED_CODE:\n```typescript\n[Suggested TypeScript code changes]\n```\n");
 
                 // Use LLM to generate suggestions
                 Session session = runner.sessionService()

@@ -2,6 +2,7 @@ package com.agentivy.backend.tools.testing;
 
 import com.agentivy.backend.service.EventPublisherHelper;
 import com.agentivy.backend.service.SessionContext;
+import com.agentivy.backend.util.ScoringUtils;
 import com.agentivy.backend.tools.registry.ToolCategory;
 import com.agentivy.backend.tools.registry.ToolMetadata;
 import com.agentivy.backend.tools.registry.ToolProvider;
@@ -11,6 +12,7 @@ import com.google.common.collect.ImmutableMap;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.WaitUntilState;
 import io.reactivex.rxjava3.core.Maybe;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +34,9 @@ public class ComponentPerformanceTool implements ToolProvider {
         this.eventPublisher = eventPublisher;
     }
 
+    @Value("${agentivy.playwright.enabled:true}")
+    private boolean playwrightEnabled;
+
     @Value("${agentivy.playwright.timeout-ms:30000}")
     private int timeoutMs;
 
@@ -49,6 +54,26 @@ public class ComponentPerformanceTool implements ToolProvider {
 
     private Playwright playwright;
     private Browser browser;
+
+    @PostConstruct
+    public void init() {
+        if (!playwrightEnabled) {
+            log.info("Playwright is disabled for ComponentPerformanceTool via configuration");
+            return;
+        }
+
+        try {
+            log.info("Initializing Playwright browser for performance testing (headless: {})", headless);
+            playwright = Playwright.create();
+            browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
+                .setHeadless(headless)
+                .setTimeout(timeoutMs));
+            log.info("Playwright browser initialized successfully for performance testing");
+        } catch (Exception e) {
+            log.error("Failed to initialize Playwright for performance testing: {}", e.getMessage());
+            playwrightEnabled = false;
+        }
+    }
 
     @PreDestroy
     public void cleanup() {
@@ -116,12 +141,12 @@ public class ComponentPerformanceTool implements ToolProvider {
             );
 
             try {
-                // Initialize Playwright if needed
-                if (playwright == null) {
-                    playwright = Playwright.create();
-                    browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
-                        .setHeadless(headless)
-                        .setTimeout(timeoutMs));
+                // Check if Playwright is ready (initialized via @PostConstruct)
+                if (!playwrightEnabled || browser == null) {
+                    return ImmutableMap.<String, Object>builder()
+                        .put("status", "error")
+                        .put("message", "Playwright not initialized. Ensure agentivy.playwright.enabled=true and Chromium is installed.")
+                        .build();
                 }
 
                 // Publish in-progress status with phase information
@@ -195,7 +220,7 @@ public class ComponentPerformanceTool implements ToolProvider {
                         ? String.format("Performance score: %d/100", performanceScore)
                         : String.format("Performance score: %d/100 (%d warnings)", performanceScore, warnings.size()),
                     Map.of(
-                        "passed", performanceScore >= 70 && warnings.isEmpty(),
+                        "passed", "pass".equals(ScoringUtils.performanceStatusFromScore(performanceScore)),
                         "performanceScore", performanceScore,
                         "warningCount", warnings.size(),
                         "initialLoad", initialMetricsData != null ? initialMetricsData : Map.of(),
@@ -214,7 +239,7 @@ public class ComponentPerformanceTool implements ToolProvider {
                     .put("metrics", allMetrics)
                     .put("performanceScore", performanceScore)
                     .put("evaluation", evaluation)
-                    .put("passed", (boolean) evaluation.get("allPassed") && warnings.isEmpty())
+                    .put("passed", "pass".equals(ScoringUtils.performanceStatusFromScore(performanceScore)))
                     .put("warnings", warnings)
                     .put("recommendations", generateEnhancedRecommendations(allMetrics, evaluation, warnings))
                     .build();
@@ -442,6 +467,12 @@ public class ComponentPerformanceTool implements ToolProvider {
 
     /**
      * Step 3: Runtime monitoring - memory and change detection over time.
+     *
+     * Note: This method uses Thread.sleep() for sampling intervals, which blocks
+     * the current thread. This is intentional because:
+     * 1. It runs inside Maybe.fromCallable() on a bounded scheduler
+     * 2. The monitoring loop is inherently sequential (sample, wait, sample)
+     * 3. Each invocation creates its own browser context, so blocking is isolated
      */
     private Map<String, Object> measureRuntimePerformance(Page page) {
         try {
@@ -499,20 +530,28 @@ public class ComponentPerformanceTool implements ToolProvider {
                 () => {
                     if (window.__cdMonitor) return; // Already injected
 
-                    window.__cdMonitor = { cycles: 0, rate: 0, lastCheck: Date.now() };
+                    window.__cdMonitor = { cycles: 0, rate: 0, lastCheck: Date.now(), cyclesSinceLastCheck: 0 };
 
-                    // Hook into Angular's zone if available
+                    // Hook into Angular's zone if available.
+                    // NOTE: This only hooks Zone.current.run. Angular also uses
+                    // runTask, runGuarded, and scheduleTask on the Zone prototype.
+                    // If Zone.current.run is not triggered, the rate will read as 0.
+                    // A more robust approach would use ng.profiler or
+                    // getAllAngularRootElements() if available, but those APIs are
+                    // only present in development mode.
                     if (window.Zone && window.Zone.current) {
                         const originalRun = window.Zone.current.run;
                         window.Zone.current.run = function(...args) {
                             window.__cdMonitor.cycles++;
+                            window.__cdMonitor.cyclesSinceLastCheck++;
 
-                            // Calculate rate (cycles per second)
+                            // Calculate rate (cycles per second) over last interval
                             const now = Date.now();
                             const elapsed = (now - window.__cdMonitor.lastCheck) / 1000;
                             if (elapsed >= 1) {
-                                window.__cdMonitor.rate = window.__cdMonitor.cycles / elapsed;
+                                window.__cdMonitor.rate = window.__cdMonitor.cyclesSinceLastCheck / elapsed;
                                 window.__cdMonitor.lastCheck = now;
+                                window.__cdMonitor.cyclesSinceLastCheck = 0;
                             }
 
                             return originalRun.apply(this, args);
@@ -574,7 +613,7 @@ public class ComponentPerformanceTool implements ToolProvider {
     /**
      * Calculate enhanced performance score including runtime penalties.
      */
-    private int calculateEnhancedPerformanceScore(Map<String, Object> allMetrics) {
+    int calculateEnhancedPerformanceScore(Map<String, Object> allMetrics) {
         Map<String, Object> initialMetrics = (Map<String, Object>) allMetrics.get("initial");
         Map<String, Object> runtimeMetrics = (Map<String, Object>) allMetrics.get("runtime");
         Map<String, Object> domMetrics = (Map<String, Object>) allMetrics.get("dom");
@@ -728,15 +767,35 @@ public class ComponentPerformanceTool implements ToolProvider {
     }
 
     /**
-     * Parses threshold JSON string into a map.
+     * Parses threshold JSON string into a map, merging with defaults.
+     * Unknown keys in the input are ignored.
      */
-    private Map<String, Double> parseThresholds(String thresholds) {
+    Map<String, Double> parseThresholds(String thresholds) {
         Map<String, Double> defaults = new HashMap<>();
         defaults.put("loadTime", 3000.0);
         defaults.put("renderTime", 1000.0);
         defaults.put("firstContentfulPaint", 1800.0);
         defaults.put("largestContentfulPaint", 2500.0);
         defaults.put("timeToInteractive", 3800.0);
+        defaults.put("memoryUsage", 50.0);
+        defaults.put("domElements", 1500.0);
+
+        if (thresholds == null || thresholds.isBlank()) {
+            return defaults;
+        }
+
+        try {
+            com.google.gson.JsonObject json = com.google.gson.JsonParser
+                .parseString(thresholds).getAsJsonObject();
+            for (String key : new ArrayList<>(defaults.keySet())) {
+                if (json.has(key) && json.get(key).isJsonPrimitive()) {
+                    defaults.put(key, json.get(key).getAsDouble());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse thresholds JSON, using defaults: {}", e.getMessage());
+        }
+
         return defaults;
     }
 

@@ -173,8 +173,34 @@ public class AngularDevServerTool implements ToolProvider {
                 return errorResult("Setup failed: " + e.getMessage());
             }
 
-            // 4. Start server
+            // 4. Find available port, then start server
             try {
+                // Auto-find a free port if the requested one is occupied
+                int originalPort = serverPort;
+                int maxAttempts = 10;
+                for (int attempt = 0; attempt < maxAttempts; attempt++) {
+                    try (var testSocket = new java.net.ServerSocket(serverPort)) {
+                        testSocket.setReuseAddress(true);
+                        break; // Port is free
+                    } catch (java.io.IOException portEx) {
+                        log.warn("Port {} is already in use, trying {}", serverPort, serverPort + 1);
+                        serverPort++;
+                        if (attempt == maxAttempts - 1) {
+                            log.error("No available port found in range {}-{}", originalPort, serverPort);
+                            eventPublisher.publishComponentStatus(
+                                componentName, "dev-server", "failed",
+                                "No available port found in range " + originalPort + "-" + serverPort,
+                                Map.of("port", originalPort, "error", "NO_PORT_AVAILABLE")
+                            );
+                            return errorResult("No available port found. Ports " + originalPort
+                                + "-" + serverPort + " are all in use.");
+                        }
+                    }
+                }
+                if (serverPort != originalPort) {
+                    log.info("Port {} was occupied, using port {} instead", originalPort, serverPort);
+                }
+
                 log.info("Starting Angular dev server on port {}...", serverPort);
 
                 eventPublisher.publishComponentStatus(

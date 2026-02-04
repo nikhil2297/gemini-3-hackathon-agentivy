@@ -268,7 +268,7 @@ public class AccessibilityTestingTool implements ToolProvider {
     }
 
     /**
-     * Build detailed violation information for metadata.
+     * Build detailed violation information for metadata with actionable details.
      */
     private List<Map<String, Object>> buildViolationDetails(List<Map<String, Object>> criticalIssues) {
         if (criticalIssues == null || criticalIssues.isEmpty()) {
@@ -276,16 +276,76 @@ public class AccessibilityTestingTool implements ToolProvider {
         }
 
         return criticalIssues.stream()
-            .limit(5) // Top 5 critical issues
-            .map(issue -> Map.of(
-                "id", issue.getOrDefault("id", "unknown"),
-                "impact", issue.getOrDefault("impact", "unknown"),
-                "description", issue.getOrDefault("description", ""),
-                "helpUrl", issue.getOrDefault("helpUrl", ""),
-                "nodes", issue.containsKey("nodes") && issue.get("nodes") instanceof List
-                    ? ((List<?>) issue.get("nodes")).size()
-                    : 0
-            ))
+            .limit(10) // Top 10 critical issues with full details
+            .map(issue -> {
+                Map<String, Object> details = new HashMap<>();
+                details.put("id", issue.getOrDefault("id", "unknown"));
+                details.put("impact", issue.getOrDefault("impact", "unknown"));
+                details.put("description", issue.getOrDefault("description", ""));
+                details.put("help", issue.getOrDefault("help", ""));
+                details.put("helpUrl", issue.getOrDefault("helpUrl", ""));
+
+                // Include detailed node information with actionable fixes
+                if (issue.containsKey("nodes") && issue.get("nodes") instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> nodes = (List<Map<String, Object>>) issue.get("nodes");
+                    details.put("nodeCount", nodes.size());
+
+                    // Include first few nodes with their detailed actionable information
+                    List<Map<String, Object>> detailedNodes = nodes.stream()
+                        .limit(3)
+                        .map(node -> {
+                            Map<String, Object> nodeDetail = new HashMap<>();
+                            nodeDetail.put("element", node.get("html"));
+                            nodeDetail.put("target", node.get("target"));
+
+                            // Include actionable details
+                            if (node.containsKey("violationType")) {
+                                nodeDetail.put("violationType", node.get("violationType"));
+                            }
+                            if (node.containsKey("suggestedFix")) {
+                                nodeDetail.put("suggestedFix", node.get("suggestedFix"));
+                            }
+                            if (node.containsKey("howToFix")) {
+                                nodeDetail.put("howToFix", node.get("howToFix"));
+                            }
+                            if (node.containsKey("exampleFix")) {
+                                nodeDetail.put("exampleFix", node.get("exampleFix"));
+                            }
+
+                            // Color contrast specific details
+                            if (node.containsKey("foregroundColor")) {
+                                nodeDetail.put("foregroundColor", node.get("foregroundColor"));
+                                nodeDetail.put("backgroundColor", node.get("backgroundColor"));
+                                nodeDetail.put("contrastRatio", node.get("contrastRatio"));
+                                nodeDetail.put("expectedRatio", node.get("expectedRatio"));
+                            }
+
+                            // Missing attributes
+                            if (node.containsKey("missingAttribute")) {
+                                nodeDetail.put("missingAttribute", node.get("missingAttribute"));
+                            }
+                            if (node.containsKey("missingAttributes")) {
+                                nodeDetail.put("missingAttributes", node.get("missingAttributes"));
+                            }
+
+                            // Include failure messages
+                            if (node.containsKey("failureMessages")) {
+                                nodeDetail.put("failureMessages", node.get("failureMessages"));
+                            }
+
+                            return nodeDetail;
+                        })
+                        .toList();
+
+                    details.put("detailedNodes", detailedNodes);
+                } else {
+                    details.put("nodeCount", 0);
+                    details.put("detailedNodes", List.of());
+                }
+
+                return details;
+            })
             .toList();
     }
 
@@ -314,7 +374,7 @@ public class AccessibilityTestingTool implements ToolProvider {
     }
 
     /**
-     * Extracts critical and serious violations for quick review.
+     * Extracts critical and serious violations for quick review with full node details.
      */
     private List<Map<String, Object>> extractCriticalIssues(List<Map<String, Object>> violations) {
         if (violations == null) {
@@ -326,13 +386,21 @@ public class AccessibilityTestingTool implements ToolProvider {
                 String impact = (String) v.get("impact");
                 return "critical".equalsIgnoreCase(impact) || "serious".equalsIgnoreCase(impact);
             })
-            .map(v -> Map.of(
-                "id", v.get("id"),
-                "impact", v.get("impact"),
-                "description", v.get("description"),
-                "help", v.get("help"),
-                "helpUrl", v.get("helpUrl")
-            ))
+            .map(v -> {
+                Map<String, Object> issue = new HashMap<>();
+                issue.put("id", v.get("id"));
+                issue.put("impact", v.get("impact"));
+                issue.put("description", v.get("description"));
+                issue.put("help", v.get("help"));
+                issue.put("helpUrl", v.get("helpUrl"));
+
+                // Include nodes with their detailed actionable information
+                if (v.containsKey("nodes")) {
+                    issue.put("nodes", v.get("nodes"));
+                }
+
+                return issue;
+            })
             .toList();
     }
 }

@@ -188,7 +188,7 @@ public class AccessibilityFixerTool implements ToolProvider {
             String violations) {
 
         return String.format("""
-            You are an Angular accessibility expert. Fix the WCAG violations in this component.
+            You are an Angular accessibility expert. Identify each WCAG violation, explain the issue, and suggest how to fix it with reference to the code. Do NOT apply or claim to apply any fixes.
 
             Component: %s
 
@@ -208,7 +208,7 @@ public class AccessibilityFixerTool implements ToolProvider {
             ```
 
             INSTRUCTIONS:
-            1. Fix all accessibility violations following WCAG 2.1 AA standards
+            1. Identify all accessibility violations and explain each issue with reference to specific code lines following WCAG 2.1 AA standards
             2. Common fixes include:
                - Add aria-label or aria-labelledby for interactive elements
                - Ensure sufficient color contrast (4.5:1 for normal text)
@@ -412,9 +412,9 @@ public class AccessibilityFixerTool implements ToolProvider {
                     log.warn("Could not read Styles file (file not found or empty): {}", fullStylesPath);
                 }
 
-                // Build prompt for AI to generate suggestions
+                // Build prompt for AI to generate suggestions (suggest only, do NOT imply fixes were applied)
                 StringBuilder prompt = new StringBuilder();
-                prompt.append("Analyze the following Angular component and suggest fixes for accessibility violations.\n\n");
+                prompt.append("Analyze the following Angular component. For each accessibility violation, explain what the issue is and suggest how to fix it with reference to the specific code. Do NOT imply that any fixes have been applied. You are only providing suggestions.\n\n");
                 prompt.append("Component: ").append(componentClassName).append("\n\n");
 
                 if (!tsContent.isEmpty()) {
@@ -446,12 +446,13 @@ public class AccessibilityFixerTool implements ToolProvider {
                 }
 
                 prompt.append("\nProvide:\n");
-                prompt.append("1. A clear explanation of what changes are needed and why\n");
-                prompt.append("2. The complete fixed code (HTML and/or TypeScript)\n");
-                prompt.append("3. Specific line-by-line changes needed\n\n");
+                prompt.append("1. A clear explanation of each issue and why it is a problem\n");
+                prompt.append("2. Suggested code changes that would resolve each violation (reference specific files and lines)\n");
+                prompt.append("3. Explain WHY each change is needed\n\n");
+                prompt.append("IMPORTANT: You are only suggesting fixes, NOT applying them. Do NOT say 'I have corrected' or 'I have fixed'. Use language like 'The issue is...' and 'To fix this, you should...'\n\n");
                 prompt.append("Format your response as:\n");
-                prompt.append("EXPLANATION:\n[Your explanation here]\n\n");
-                prompt.append("SUGGESTED_CODE:\n```html\n[Fixed HTML code]\n```\n");
+                prompt.append("EXPLANATION:\n[Your explanation of issues and suggested fixes here]\n\n");
+                prompt.append("SUGGESTED_CODE:\n```html\n[Suggested HTML code changes]\n```\n");
 
                 // Use LLM to generate suggestions
                 Session session = runner.sessionService()

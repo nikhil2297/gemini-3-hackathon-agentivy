@@ -436,6 +436,10 @@ public class AutonomousAgentController {
             case AgentEvent.FixSuggestion fs -> "fix_suggestion";
             case AgentEvent.Completed comp -> "completed";
             case AgentEvent.Error e -> "error";
+            case AgentEvent.WorkflowStarted ws -> "start";
+            case AgentEvent.WorkflowComponentResult wcr -> "component-result";
+            case AgentEvent.WorkflowSummaryEvent wse -> "summary";
+            case AgentEvent.WorkflowDone wd -> "done";
         };
     }
 

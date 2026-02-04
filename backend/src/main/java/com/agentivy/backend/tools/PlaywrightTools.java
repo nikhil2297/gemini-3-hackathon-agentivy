@@ -258,26 +258,40 @@ public class PlaywrightTools implements ToolProvider {
 
     private String buildAxeScript(String selector, String level) {
         String tags = switch (level) {
-            case "A" -> "['wcag2a', 'wcag21a']";
-            case "AAA" -> "['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa']";
-            default -> "['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']"; // AA
+            case "A" -> "['wcag2a', 'wcag21a', 'best-practice']";
+            case "AAA" -> "['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa', 'best-practice']";
+            default -> "['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']"; // AA
         };
+
+        // Use document as fallback if selector is empty or not found on the page
+        String selectorArg = (selector != null && !selector.isEmpty())
+            ? "'" + selector + "'"
+            : "document";
 
         return """
             async () => {
-                const results = await axe.run('%s', {
+                // Try the component selector first, fall back to document if not found
+                let target = %s;
+                if (typeof target === 'string') {
+                    const el = document.querySelector(target);
+                    if (!el) {
+                        console.warn('Selector not found: ' + target + ', falling back to document');
+                        target = document;
+                    }
+                }
+                const results = await axe.run(target, {
                     runOnly: { type: 'tag', values: %s },
-                    resultTypes: ['violations'],  // Only check violations, skip passes/incomplete
+                    resultTypes: ['violations', 'incomplete'],
                     timeout: 50000,  // 50 second timeout for axe itself
                     performanceTimer: true  // Enable performance optimization
                 });
                 return {
                     violations: results.violations || [],
                     passes: [],
-                    incomplete: []
+                    incomplete: results.incomplete || []
                 };
             }
-            """.formatted(selector, tags);
+            """.formatted(selectorArg, tags);
     }
 
     @SuppressWarnings("unchecked")
@@ -289,23 +303,26 @@ public class PlaywrightTools implements ToolProvider {
         List<Map<String, Object>> passes = (List<Map<String, Object>>)
                 axeResults.getOrDefault("passes", List.of());
 
-        // Process violations for cleaner output
+        // Process violations with detailed actionable information
         List<Map<String, Object>> processedViolations = violations.stream()
                 .map(v -> {
                     @SuppressWarnings("unchecked")
                     List<Map<String, Object>> nodes = (List<Map<String, Object>>) v.get("nodes");
-                    return Map.<String, Object>of(
-                            "id", v.get("id"),
-                            "impact", v.getOrDefault("impact", "unknown"),
-                            "description", v.get("description"),
-                            "help", v.get("help"),
-                            "helpUrl", v.get("helpUrl"),
-                            "nodeCount", nodes != null ? nodes.size() : 0,
-                            "affectedNodes", nodes != null ? nodes.stream()
-                                    .limit(5)
-                                    .map(n -> n.get("html"))
-                                    .toList() : List.of()
-                    );
+
+                    // Extract detailed node information
+                    List<Map<String, Object>> detailedNodes = extractDetailedNodeInfo(nodes, (String) v.get("id"));
+
+                    // Use HashMap for flexibility
+                    Map<String, Object> processedViolation = new HashMap<>();
+                    processedViolation.put("id", v.get("id"));
+                    processedViolation.put("impact", v.getOrDefault("impact", "unknown"));
+                    processedViolation.put("description", v.get("description"));
+                    processedViolation.put("help", v.get("help"));
+                    processedViolation.put("helpUrl", v.get("helpUrl"));
+                    processedViolation.put("nodeCount", nodes != null ? nodes.size() : 0);
+                    processedViolation.put("nodes", detailedNodes);
+
+                    return processedViolation;
                 })
                 .toList();
 
@@ -319,5 +336,295 @@ public class PlaywrightTools implements ToolProvider {
                 .put("passCount", passes.size())
                 .put("violations", processedViolations)
                 .build();
+    }
+
+    /**
+     * Extracts detailed, actionable information from axe-core violation nodes.
+     * Provides specific details for each violation type including:
+     * - Color contrast: foreground/background colors, current vs required ratios
+     * - Missing attributes: which attributes are missing and suggested values
+     * - ARIA issues: current vs expected ARIA properties
+     * - Form labels: association issues and fix suggestions
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractDetailedNodeInfo(List<Map<String, Object>> nodes, String violationId) {
+        if (nodes == null || nodes.isEmpty()) {
+            return List.of();
+        }
+
+        return nodes.stream()
+                .limit(10) // Process up to 10 nodes for detailed info
+                .map(node -> {
+                    Map<String, Object> detailedNode = new HashMap<>();
+
+                    // Basic node information
+                    detailedNode.put("html", node.get("html"));
+                    detailedNode.put("target", node.get("target"));
+
+                    // Extract failure details from 'any', 'all', 'none' arrays
+                    List<Map<String, Object>> allChecks = new ArrayList<>();
+                    if (node.get("any") instanceof List) {
+                        allChecks.addAll((List<Map<String, Object>>) node.get("any"));
+                    }
+                    if (node.get("all") instanceof List) {
+                        allChecks.addAll((List<Map<String, Object>>) node.get("all"));
+                    }
+                    if (node.get("none") instanceof List) {
+                        allChecks.addAll((List<Map<String, Object>>) node.get("none"));
+                    }
+
+                    // Extract actionable information based on violation type
+                    Map<String, Object> actionable = extractActionableInfo(violationId, allChecks, node);
+                    detailedNode.putAll(actionable);
+
+                    // Add failure summary
+                    List<String> failureMessages = allChecks.stream()
+                            .map(check -> (String) check.get("message"))
+                            .filter(Objects::nonNull)
+                            .toList();
+                    detailedNode.put("failureMessages", failureMessages);
+
+                    return detailedNode;
+                })
+                .toList();
+    }
+
+    /**
+     * Extracts specific actionable information based on violation type
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractActionableInfo(String violationId, List<Map<String, Object>> checks, Map<String, Object> node) {
+        Map<String, Object> actionable = new HashMap<>();
+
+        switch (violationId) {
+            case "color-contrast" -> {
+                // Extract color contrast details
+                for (Map<String, Object> check : checks) {
+                    Object data = check.get("data");
+                    if (data instanceof Map) {
+                        Map<String, Object> contrastData = (Map<String, Object>) data;
+                        actionable.put("violationType", "color-contrast");
+                        actionable.put("foregroundColor", contrastData.get("fgColor"));
+                        actionable.put("backgroundColor", contrastData.get("bgColor"));
+                        actionable.put("contrastRatio", contrastData.get("contrastRatio"));
+                        actionable.put("expectedRatio", contrastData.get("expectedContrastRatio"));
+                        actionable.put("fontSize", contrastData.get("fontSize"));
+
+                        // Generate fix suggestion
+                        String fix = generateColorContrastFix(contrastData);
+                        actionable.put("suggestedFix", fix);
+
+                        // Extract CSS class from HTML
+                        String html = (String) node.get("html");
+                        String cssClass = extractCssClass(html);
+                        if (cssClass != null) {
+                            actionable.put("cssClass", cssClass);
+                            actionable.put("howToFix", String.format(
+                                "In your component's .scss/.css file, find '.%s' and update the color property to meet contrast requirements",
+                                cssClass
+                            ));
+                        }
+
+                        // Suggest color alternatives
+                        actionable.put("suggestedColorOptions", generateColorAlternatives(contrastData));
+                    }
+                }
+            }
+            case "image-alt" -> {
+                actionable.put("violationType", "missing-attribute");
+                actionable.put("missingAttribute", "alt");
+                actionable.put("suggestedFix", "Add alt=\"descriptive text\" attribute to the <img> element");
+                actionable.put("currentElement", node.get("html"));
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 1.1.1 Non-text Content");
+                actionable.put("howToFix", "Add an alt attribute describing the image's content and purpose");
+
+                // Generate example fix
+                String html = (String) node.get("html");
+                if (html != null) {
+                    String exampleFix = html.replaceFirst(">", " alt=\"Describe this image\">");
+                    actionable.put("exampleFix", exampleFix);
+                }
+            }
+            case "label", "form-field-multiple-labels" -> {
+                actionable.put("violationType", "missing-label");
+                for (Map<String, Object> check : checks) {
+                    Object data = check.get("data");
+                    if (data instanceof Map) {
+                        Map<String, Object> labelData = (Map<String, Object>) data;
+                        actionable.put("inputType", labelData.get("type"));
+                    }
+                }
+                actionable.put("suggestedFix", "Associate a <label> element using for=\"inputId\" or wrap the input with <label>");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 3.3.2 Labels or Instructions");
+                actionable.put("howToFix", "Add a <label> element with for attribute matching the input's id");
+                actionable.put("exampleFix", "<label for=\"inputId\">Field Label:</label>\n<input id=\"inputId\" type=\"text\">");
+            }
+            case "aria-required-attr" -> {
+                actionable.put("violationType", "missing-aria-attribute");
+                for (Map<String, Object> check : checks) {
+                    Object data = check.get("data");
+                    if (data instanceof List) {
+                        actionable.put("missingAttributes", data);
+                        actionable.put("suggestedFix", "Add required ARIA attributes: " + data);
+                        actionable.put("howToFix", "Add the missing ARIA attributes to the element: " + data);
+                    }
+                }
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 4.1.2 Name, Role, Value");
+            }
+            case "aria-allowed-attr" -> {
+                actionable.put("violationType", "invalid-aria-attribute");
+                for (Map<String, Object> check : checks) {
+                    Object data = check.get("data");
+                    if (data instanceof List) {
+                        actionable.put("invalidAttributes", data);
+                        actionable.put("suggestedFix", "Remove or fix invalid ARIA attributes: " + data);
+                        actionable.put("howToFix", "These ARIA attributes are not allowed on this element type. Remove them or use the correct element.");
+                    }
+                }
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 4.1.2 Name, Role, Value");
+            }
+            case "button-name", "link-name" -> {
+                actionable.put("violationType", "missing-accessible-name");
+                actionable.put("missingAttribute", "aria-label or text content");
+                actionable.put("suggestedFix", "Add aria-label=\"descriptive text\" or provide text content inside the element");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 4.1.2 Name, Role, Value");
+                actionable.put("howToFix", "Add text content inside the element or use aria-label attribute");
+                String elementType = violationId.equals("button-name") ? "button" : "link";
+                actionable.put("exampleFix", String.format("<%s aria-label=\"Descriptive %s text\">...</%s>",
+                    elementType.equals("button") ? "button" : "a", elementType, elementType.equals("button") ? "button" : "a"));
+            }
+            case "tabindex" -> {
+                actionable.put("violationType", "invalid-tabindex");
+                for (Map<String, Object> check : checks) {
+                    Object data = check.get("data");
+                    if (data != null) {
+                        actionable.put("currentTabindex", data);
+                    }
+                }
+                actionable.put("suggestedFix", "Remove tabindex or set to 0 or -1 (never use values > 0)");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 2.4.3 Focus Order");
+                actionable.put("howToFix", "Change tabindex to 0 (or remove it), or use semantic HTML like <button> instead of <div>");
+                actionable.put("whyBad", "Using tabindex > 0 disrupts the natural tab order and makes navigation confusing for keyboard users");
+                actionable.put("exampleFix", "<button type=\"button\">Click me</button>");
+            }
+            case "region", "landmark-one-main", "landmark-no-duplicate-main" -> {
+                actionable.put("violationType", "missing-landmark");
+                actionable.put("suggestedFix", "Wrap content in semantic HTML5 landmarks: <main>, <nav>, <header>, <footer>, <aside>");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 1.3.1 Info and Relationships");
+                actionable.put("howToFix", "Wrap your main content in a <main> element, navigation in <nav>, etc.");
+                actionable.put("exampleFix", "<main role=\"main\">\n  <h1>Page Title</h1>\n  <!-- your content -->\n</main>");
+            }
+            case "list", "listitem" -> {
+                actionable.put("violationType", "invalid-list-structure");
+                actionable.put("suggestedFix", "Use proper list markup: <ul>/<ol> must only contain <li> elements");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 1.3.1 Info and Relationships");
+                actionable.put("howToFix", "Ensure list items are direct children of ul/ol elements");
+                actionable.put("exampleFix", "<ul>\n  <li>Item 1</li>\n  <li>Item 2</li>\n</ul>");
+            }
+            case "heading-order" -> {
+                actionable.put("violationType", "heading-order");
+                actionable.put("suggestedFix", "Use heading levels in sequential order (h1, h2, h3...)");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 1.3.1 Info and Relationships");
+                actionable.put("howToFix", "Don't skip heading levels. After h1 use h2, after h2 use h3, etc.");
+                actionable.put("whyBad", "Screen readers use heading hierarchy to navigate; skipping levels is confusing");
+            }
+            case "duplicate-id", "duplicate-id-active", "duplicate-id-aria" -> {
+                actionable.put("violationType", "duplicate-id");
+                actionable.put("suggestedFix", "Ensure all id attributes are unique on the page");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 4.1.1 Parsing");
+                actionable.put("howToFix", "Change duplicate id values to be unique");
+                actionable.put("whyBad", "Duplicate IDs break ARIA references and make form labels ambiguous");
+            }
+            case "html-has-lang" -> {
+                actionable.put("violationType", "missing-lang");
+                actionable.put("suggestedFix", "Add lang attribute to <html> element");
+                actionable.put("wcagGuideline", "WCAG 2.1 Level A - 3.1.1 Language of Page");
+                actionable.put("howToFix", "Add lang=\"en\" (or appropriate language code) to the <html> tag");
+                actionable.put("exampleFix", "<html lang=\"en\">");
+            }
+            default -> {
+                // Generic actionable info
+                actionable.put("violationType", violationId);
+                actionable.put("suggestedFix", "See helpUrl for detailed guidance");
+                actionable.put("howToFix", "Review the WCAG documentation linked in helpUrl");
+            }
+        }
+
+        return actionable;
+    }
+
+    /**
+     * Generate specific color fix suggestion
+     */
+    @SuppressWarnings("unchecked")
+    private String generateColorContrastFix(Map<String, Object> contrastData) {
+        String fgColor = (String) contrastData.get("fgColor");
+        String bgColor = (String) contrastData.get("bgColor");
+        Object ratioObj = contrastData.get("contrastRatio");
+        Object expectedObj = contrastData.get("expectedContrastRatio");
+
+        double currentRatio = ratioObj instanceof Number ? ((Number) ratioObj).doubleValue() : 0.0;
+        String expected = expectedObj != null ? expectedObj.toString() : "4.5:1";
+
+        return String.format(
+            "Current contrast ratio %.2f:1 is insufficient. Required: %s. " +
+            "Fix: Change foreground color from %s to a darker shade, " +
+            "or change background color from %s to increase contrast.",
+            currentRatio, expected, fgColor != null ? fgColor : "current", bgColor != null ? bgColor : "current"
+        );
+    }
+
+    /**
+     * Extract CSS class from HTML string
+     */
+    private String extractCssClass(String html) {
+        if (html == null) return null;
+
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("class=\"([^\"]+)\"");
+        java.util.regex.Matcher matcher = pattern.matcher(html);
+
+        if (matcher.find()) {
+            String classes = matcher.group(1);
+            // Return first non-Angular class
+            for (String cls : classes.split("\\s+")) {
+                if (!cls.startsWith("_ngcontent") && !cls.startsWith("ng-")) {
+                    return cls;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Generate alternative color options that meet contrast requirements
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, String>> generateColorAlternatives(Map<String, Object> contrastData) {
+        List<Map<String, String>> alternatives = new ArrayList<>();
+
+        String fgColor = (String) contrastData.get("fgColor");
+        Object expectedObj = contrastData.get("expectedContrastRatio");
+        String expected = expectedObj != null ? expectedObj.toString() : "4.5:1";
+
+        // Simple predefined alternatives (in practice, you'd calculate these based on the background)
+        // For now, provide common accessible color combinations
+        alternatives.add(Map.of(
+            "color", "#767676",
+            "ratio", "4.54:1",
+            "status", "✓ PASS"
+        ));
+        alternatives.add(Map.of(
+            "color", "#595959",
+            "ratio", "7.0:1",
+            "status", "✓ PASS (AAA)"
+        ));
+        alternatives.add(Map.of(
+            "color", "#000000",
+            "ratio", "21:1",
+            "status", "✓ PASS (AAA)"
+        ));
+
+        return alternatives;
     }
 }

@@ -4,6 +4,7 @@ import com.agentivy.backend.agents.ComponentAnalyzerAgentFactory;
 import com.agentivy.backend.dto.AgentEvent;
 import com.agentivy.backend.service.SessionContext;
 import com.agentivy.backend.service.SseEventPublisher;
+import com.agentivy.backend.util.ContentExtractor;
 import com.google.adk.events.Event;
 import com.google.adk.runner.InMemoryRunner;
 import com.google.adk.sessions.Session;
@@ -17,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -91,7 +91,7 @@ public class AutonomousAgentController {
                 eventData.put("timestamp", System.currentTimeMillis());
                 eventData.put("author", event.author() != null ? event.author() : "system");
 
-                String contentText = event.content().map(this::extractTextFromContent).orElse("");
+                String contentText = ContentExtractor.extractText(event.content());
                 eventData.put("content", truncate(contentText, 200));
 
                 if (event.finalResponse()) {
@@ -190,7 +190,7 @@ public class AutonomousAgentController {
 
                     if (event.finalResponse()) {
                         // Send completion event
-                        String summary = extractTextFromContent(event.content().orElse(null));
+                        String summary = ContentExtractor.extractText(event.content());
                         sseEventPublisher.publishCompleted(sessionId, summary, extractFinalReport(event));
                     }
                 });
@@ -352,38 +352,14 @@ public class AutonomousAgentController {
     }
 
     private String truncate(String text, int maxLength) {
-        if (text == null || text.length() <= maxLength) {
-            return text;
-        }
-        return text.substring(0, maxLength) + "...";
-    }
-
-    /**
-     * Extract text content from Event content.
-     */
-    private String extractTextFromContent(com.google.genai.types.Content content) {
-        if (content == null) {
-            return "";
-        }
-
-        return content.parts().map(parts -> {
-            StringBuilder text = new StringBuilder();
-            for (com.google.genai.types.Part part : parts) {
-                if (part.text() != null && !part.text().isEmpty()) {
-                    text.append(part.text()).append(" ");
-                }
-            }
-            return text.toString().trim();
-        }).orElse("");
+        return ContentExtractor.truncate(text, maxLength);
     }
 
     /**
      * Convert ADK Event to AgentEvent for SSE streaming.
      */
     private AgentEvent convertToAgentEvent(Event event) {
-        String contentText = event.content()
-            .map(this::extractTextFromContent)
-            .orElse("");
+        String contentText = ContentExtractor.extractText(event.content());
 
         // Detect tool calls from event
         if (contentText.contains("Calling tool:") || contentText.contains("scanForAngularComponents") ||
@@ -497,9 +473,7 @@ public class AutonomousAgentController {
      * Extract final report from event.
      */
     private Map<String, Object> extractFinalReport(Event event) {
-        String contentText = event.content()
-            .map(this::extractTextFromContent)
-            .orElse("");
+        String contentText = ContentExtractor.extractText(event.content());
 
         return Map.of(
             "summary", contentText,

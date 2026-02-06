@@ -25,7 +25,7 @@ import java.util.Map;
  * 1. GitHubCloneTool.cloneRepository() → returns localPath
  * 2. GitHubComponentScannerTool.scanForAngularComponents() → returns component paths
  * 3. readComponentFiles(typescriptPath, templatePath, stylesPath) → returns file contents
- * 4. Use contents with ComponentScaffoldTool.loadComponentForTesting()
+ * 4. Use contents with the atomic harness tools (metadata extractor, code generator, deployer)
  */
 @Slf4j
 @Component

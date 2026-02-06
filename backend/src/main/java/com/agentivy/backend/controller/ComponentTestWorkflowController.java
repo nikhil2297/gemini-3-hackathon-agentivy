@@ -53,197 +53,27 @@ public class ComponentTestWorkflowController {
         result.put("timestamp", System.currentTimeMillis());
 
         try {
-            // Step 1: Extract Component Metadata
-            log.info("Step 1: Extracting component metadata...");
-            ImmutableMap<String, Object> metadataResult = metadataExtractor
-                .extractComponentMetadata(request.repoPath, request.componentClassName)
-                .blockingGet();
+            ImmutableMap<String, Object> metadataResult = extractMetadata(request, result);
+            if (metadataResult == null) return ResponseEntity.badRequest().body(result);
 
-            if ("error".equals(metadataResult.get("status"))) {
-                result.put("status", "error");
-                result.put("step", "metadata_extraction");
-                result.put("error", metadataResult.get("message"));
-                return ResponseEntity.badRequest().body(result);
-            }
+            String generatedCode = generateHarness(request, metadataResult, result);
+            if (generatedCode == null) return ResponseEntity.badRequest().body(result);
 
-            result.put("metadata", metadataResult);
-                log.info("✓ Metadata extracted: selector={}", metadataResult.get("selector"));
+            ImmutableMap<String, Object> deployResult = deployHarness(request, generatedCode, result);
+            if (deployResult == null) return ResponseEntity.badRequest().body(result);
 
-            // Step 2: Generate Harness Code with LLM
-            log.info("Step 2: Generating harness code with LLM...");
-            String componentSelector = (String) metadataResult.get("selector");
-            String importPath = (String) metadataResult.get("importPath");
-
-            ImmutableMap<String, Object> codeResult = codeGenerator
-                .generateHarnessCode(
-                    request.componentClassName,
-                    componentSelector,
-                    importPath,
-                    request.componentInputs != null ? request.componentInputs : "",
-                    request.mockData != null ? request.mockData : "",
-                    request.serviceMocks != null ? request.serviceMocks : "",
-                    ""
-                )
-                .blockingGet();
-
-            if ("error".equals(codeResult.get("status"))) {
-                result.put("status", "error");
-                result.put("step", "code_generation");
-                result.put("error", codeResult.get("message"));
-                return ResponseEntity.badRequest().body(result);
-            }
-
-            String generatedCode = (String) codeResult.get("code");
-            result.put("harnessCodeGenerated", true);
-            result.put("codeLength", generatedCode.length());
-            log.info("✓ Harness code generated ({} chars)", generatedCode.length());
-
-            // Step 3: Deploy Harness
-            log.info("Step 3: Deploying harness to project...");
-            ImmutableMap<String, Object> deployResult = deployer
-                .deployHarness(request.repoPath, generatedCode)
-                .blockingGet();
-
-            if ("error".equals(deployResult.get("status"))) {
-                result.put("status", "error");
-                result.put("step", "deployment");
-                result.put("error", deployResult.get("message"));
-                return ResponseEntity.badRequest().body(result);
-            }
-
-            result.put("harnessDeployed", true);
-            result.put("harnessFilePath", deployResult.get("harnessFilePath"));
-            result.put("harnessUrl", deployResult.get("harnessUrl"));
-            log.info("✓ Harness deployed to: {}", deployResult.get("harnessFilePath"));
-
-            // Step 4: Start Angular Dev Server
-            log.info("Step 4: Starting Angular dev server...");
-            int port = request.port != null ? request.port : 4200;
-            ImmutableMap<String, Object> serverResult = devServer
-                .prepareAndStartServer(request.repoPath, port)
-                .blockingGet();
-
-            if ("error".equals(serverResult.get("status"))) {
-                result.put("status", "error");
-                result.put("step", "server_start");
-                result.put("error", serverResult.get("reason"));
-                result.put("compilationErrors", serverResult.get("compilationErrors"));
-                return ResponseEntity.badRequest().body(result);
-            }
-
-            result.put("serverStarted", true);
-            result.put("serverUrl", serverResult.get("serverUrl"));
-            result.put("componentUrl", serverResult.get("harnessUrl"));
-            log.info("✓ Server started at: {}", serverResult.get("serverUrl"));
-
-            // Step 5: Run Tests (Continue even if individual tests fail)
-            log.info("Step 5: Running tests...");
-            Map<String, Object> testResults = new HashMap<>();
+            ImmutableMap<String, Object> serverResult = startDevServer(request, result);
+            if (serverResult == null) return ResponseEntity.badRequest().body(result);
 
             String componentUrl = (String) serverResult.get("harnessUrl");
-            boolean anyTestCompleted = false;
-
-            // Run Accessibility Tests (with timeout protection)
-            if (request.tests != null && request.tests.contains("accessibility")) {
-                log.info("  → Running accessibility tests...");
-                try {
-                    // Use a separate thread with timeout to prevent blocking
-                    ImmutableMap<String, Object> accessibilityResult = accessibilityTester
-                        .runAccessibilityTest(componentUrl, "AA")
-                        .timeout(90, java.util.concurrent.TimeUnit.SECONDS)  // 90 second timeout
-                        .onErrorReturn(error -> ImmutableMap.of(
-                            "status", "error",
-                            "message", "Accessibility test timed out or failed: " + error.getMessage(),
-                            "skipped", false
-                        ))
-                        .blockingGet();
-
-                    testResults.put("accessibility", accessibilityResult);
-
-                    if ("success".equals(accessibilityResult.get("status"))) {
-                        int violations = (int) accessibilityResult.get("totalViolations");
-                        log.info("  ✓ Accessibility test completed: {} violations", violations);
-                        anyTestCompleted = true;
-                    } else {
-                        log.warn("  ✗ Accessibility test failed: {}", accessibilityResult.get("message"));
-                    }
-                } catch (Exception e) {
-                    log.error("Accessibility test exception (continuing to next test)", e);
-                    testResults.put("accessibility", Map.of(
-                        "status", "error",
-                        "message", "Accessibility test error: " + e.getMessage(),
-                        "skipped", false
-                    ));
-                }
-                log.info("  → Moving to next test...");
-            }
-
-            // Run Performance Tests (independent of accessibility test result)
-            if (request.tests != null && request.tests.contains("performance")) {
-                log.info("  → Running performance tests...");
-                try {
-                    // Use timeout to prevent blocking
-                    ImmutableMap<String, Object> performanceResult = performanceTester
-                        .runPerformanceTest(componentUrl, "")
-                        .timeout(90, java.util.concurrent.TimeUnit.SECONDS)  // 90 second timeout
-                        .onErrorReturn(error -> ImmutableMap.of(
-                            "status", "error",
-                            "message", "Performance test timed out or failed: " + error.getMessage(),
-                            "skipped", false
-                        ))
-                        .blockingGet();
-
-                    testResults.put("performance", performanceResult);
-
-                    if ("success".equals(performanceResult.get("status"))) {
-                        int score = (int) performanceResult.get("performanceScore");
-                        log.info("  ✓ Performance test completed: score={}/100", score);
-                        anyTestCompleted = true;
-                    } else {
-                        log.warn("  ✗ Performance test failed: {}", performanceResult.get("message"));
-                    }
-                } catch (Exception e) {
-                    log.error("Performance test exception", e);
-                    testResults.put("performance", Map.of(
-                        "status", "error",
-                        "message", "Performance test error: " + e.getMessage(),
-                        "skipped", false
-                    ));
-                }
-            }
-
-            // Responsiveness tests (placeholder for future implementation)
-            if (request.tests != null && request.tests.contains("responsiveness")) {
-                testResults.put("responsiveness", Map.of(
-                    "status", "pending",
-                    "message", "Responsiveness testing will be implemented with screenshot + Vector DB"
-                ));
-            }
+            Map<String, Object> testResults = executeTests(request, componentUrl);
 
             result.put("testResults", testResults);
             result.put("status", "success");
+            result.put("message", buildTestSummaryMessage(testResults));
+            result.put("testsCompleted", hasAnyCompletedTest(testResults));
 
-            // Determine overall message based on test results
-            String message;
-            if (testResults.isEmpty()) {
-                message = "Component harness deployed and server started successfully (no tests requested)";
-            } else if (anyTestCompleted) {
-                long errorCount = testResults.values().stream()
-                    .filter(v -> v instanceof Map && "error".equals(((Map<?, ?>) v).get("status")))
-                    .count();
-                if (errorCount > 0) {
-                    message = String.format("Workflow completed with %d test(s) having errors or timeouts", errorCount);
-                } else {
-                    message = "Component harness deployed, server started, and all tests completed successfully";
-                }
-            } else {
-                message = "Component harness deployed and server started, but all tests failed or timed out";
-            }
-
-            result.put("message", message);
-            result.put("testsCompleted", anyTestCompleted);
-
-            log.info("✓ Workflow completed: {}", message);
+            log.info("Workflow completed: {}", result.get("message"));
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {
@@ -251,6 +81,198 @@ public class ComponentTestWorkflowController {
             result.put("status", "error");
             result.put("error", e.getMessage());
             return ResponseEntity.internalServerError().body(result);
+        }
+    }
+
+    /** Step 1: Extract component metadata. Returns null on failure (result map is populated with error). */
+    private ImmutableMap<String, Object> extractMetadata(TestComponentRequest request, Map<String, Object> result) {
+        log.info("Step 1: Extracting component metadata...");
+        ImmutableMap<String, Object> metadataResult = metadataExtractor
+            .extractComponentMetadata(request.repoPath, request.componentClassName)
+            .blockingGet();
+
+        if ("error".equals(metadataResult.get("status"))) {
+            result.put("status", "error");
+            result.put("step", "metadata_extraction");
+            result.put("error", metadataResult.get("message"));
+            return null;
+        }
+
+        result.put("metadata", metadataResult);
+        log.info("Metadata extracted: selector={}", metadataResult.get("selector"));
+        return metadataResult;
+    }
+
+    /** Step 2: Generate harness code via LLM. Returns null on failure. */
+    private String generateHarness(TestComponentRequest request, ImmutableMap<String, Object> metadataResult, Map<String, Object> result) {
+        log.info("Step 2: Generating harness code with LLM...");
+        String componentSelector = (String) metadataResult.get("selector");
+        String importPath = (String) metadataResult.get("importPath");
+
+        ImmutableMap<String, Object> codeResult = codeGenerator
+            .generateHarnessCode(
+                request.componentClassName,
+                componentSelector,
+                importPath,
+                request.componentInputs != null ? request.componentInputs : "",
+                request.mockData != null ? request.mockData : "",
+                request.serviceMocks != null ? request.serviceMocks : "",
+                ""
+            )
+            .blockingGet();
+
+        if ("error".equals(codeResult.get("status"))) {
+            result.put("status", "error");
+            result.put("step", "code_generation");
+            result.put("error", codeResult.get("message"));
+            return null;
+        }
+
+        String generatedCode = (String) codeResult.get("code");
+        result.put("harnessCodeGenerated", true);
+        result.put("codeLength", generatedCode.length());
+        log.info("Harness code generated ({} chars)", generatedCode.length());
+        return generatedCode;
+    }
+
+    /** Step 3: Deploy the generated harness to the project. Returns null on failure. */
+    private ImmutableMap<String, Object> deployHarness(TestComponentRequest request, String generatedCode, Map<String, Object> result) {
+        log.info("Step 3: Deploying harness to project...");
+        ImmutableMap<String, Object> deployResult = deployer
+            .deployHarness(request.repoPath, generatedCode)
+            .blockingGet();
+
+        if ("error".equals(deployResult.get("status"))) {
+            result.put("status", "error");
+            result.put("step", "deployment");
+            result.put("error", deployResult.get("message"));
+            return null;
+        }
+
+        result.put("harnessDeployed", true);
+        result.put("harnessFilePath", deployResult.get("harnessFilePath"));
+        result.put("harnessUrl", deployResult.get("harnessUrl"));
+        log.info("Harness deployed to: {}", deployResult.get("harnessFilePath"));
+        return deployResult;
+    }
+
+    /** Step 4: Start the Angular dev server. Returns null on failure. */
+    private ImmutableMap<String, Object> startDevServer(TestComponentRequest request, Map<String, Object> result) {
+        log.info("Step 4: Starting Angular dev server...");
+        int port = request.port != null ? request.port : 4200;
+        ImmutableMap<String, Object> serverResult = devServer
+            .prepareAndStartServer(request.repoPath, port)
+            .blockingGet();
+
+        if ("error".equals(serverResult.get("status"))) {
+            result.put("status", "error");
+            result.put("step", "server_start");
+            result.put("error", serverResult.get("reason"));
+            result.put("compilationErrors", serverResult.get("compilationErrors"));
+            return null;
+        }
+
+        result.put("serverStarted", true);
+        result.put("serverUrl", serverResult.get("serverUrl"));
+        result.put("componentUrl", serverResult.get("harnessUrl"));
+        log.info("Server started at: {}", serverResult.get("serverUrl"));
+        return serverResult;
+    }
+
+    /** Step 5: Run requested tests against the component URL. */
+    private Map<String, Object> executeTests(TestComponentRequest request, String componentUrl) {
+        log.info("Step 5: Running tests...");
+        Map<String, Object> testResults = new HashMap<>();
+
+        if (request.tests != null && request.tests.contains("accessibility")) {
+            testResults.put("accessibility", runAccessibilityTest(componentUrl));
+        }
+        if (request.tests != null && request.tests.contains("performance")) {
+            testResults.put("performance", runPerformanceTest(componentUrl));
+        }
+        if (request.tests != null && request.tests.contains("responsiveness")) {
+            testResults.put("responsiveness", Map.of(
+                "status", "pending",
+                "message", "Responsiveness testing will be implemented with screenshot + Vector DB"
+            ));
+        }
+
+        return testResults;
+    }
+
+    /** Run a single accessibility test with timeout protection. */
+    private Map<String, Object> runAccessibilityTest(String componentUrl) {
+        log.info("  Running accessibility tests...");
+        try {
+            ImmutableMap<String, Object> accessibilityResult = accessibilityTester
+                .runAccessibilityTest(componentUrl, "AA")
+                .timeout(90, java.util.concurrent.TimeUnit.SECONDS)
+                .onErrorReturn(error -> ImmutableMap.of(
+                    "status", "error",
+                    "message", "Accessibility test timed out or failed: " + error.getMessage(),
+                    "skipped", false
+                ))
+                .blockingGet();
+
+            if ("success".equals(accessibilityResult.get("status"))) {
+                log.info("  Accessibility test completed: {} violations", accessibilityResult.get("totalViolations"));
+            } else {
+                log.warn("  Accessibility test failed: {}", accessibilityResult.get("message"));
+            }
+            return accessibilityResult;
+        } catch (Exception e) {
+            log.error("Accessibility test exception", e);
+            return Map.of("status", "error", "message", "Accessibility test error: " + e.getMessage(), "skipped", false);
+        }
+    }
+
+    /** Run a single performance test with timeout protection. */
+    private Map<String, Object> runPerformanceTest(String componentUrl) {
+        log.info("  Running performance tests...");
+        try {
+            ImmutableMap<String, Object> performanceResult = performanceTester
+                .runPerformanceTest(componentUrl, "")
+                .timeout(90, java.util.concurrent.TimeUnit.SECONDS)
+                .onErrorReturn(error -> ImmutableMap.of(
+                    "status", "error",
+                    "message", "Performance test timed out or failed: " + error.getMessage(),
+                    "skipped", false
+                ))
+                .blockingGet();
+
+            if ("success".equals(performanceResult.get("status"))) {
+                log.info("  Performance test completed: score={}/100", performanceResult.get("performanceScore"));
+            } else {
+                log.warn("  Performance test failed: {}", performanceResult.get("message"));
+            }
+            return performanceResult;
+        } catch (Exception e) {
+            log.error("Performance test exception", e);
+            return Map.of("status", "error", "message", "Performance test error: " + e.getMessage(), "skipped", false);
+        }
+    }
+
+    private boolean hasAnyCompletedTest(Map<String, Object> testResults) {
+        return testResults.values().stream()
+            .anyMatch(v -> v instanceof Map && "success".equals(((Map<?, ?>) v).get("status")));
+    }
+
+    private String buildTestSummaryMessage(Map<String, Object> testResults) {
+        if (testResults.isEmpty()) {
+            return "Component harness deployed and server started successfully (no tests requested)";
+        }
+
+        boolean anyCompleted = hasAnyCompletedTest(testResults);
+        long errorCount = testResults.values().stream()
+            .filter(v -> v instanceof Map && "error".equals(((Map<?, ?>) v).get("status")))
+            .count();
+
+        if (anyCompleted && errorCount > 0) {
+            return String.format("Workflow completed with %d test(s) having errors or timeouts", errorCount);
+        } else if (anyCompleted) {
+            return "Component harness deployed, server started, and all tests completed successfully";
+        } else {
+            return "Component harness deployed and server started, but all tests failed or timed out";
         }
     }
 

@@ -1,6 +1,7 @@
 package com.agentivy.backend.controller;
 
 import com.agentivy.backend.controller.dto.ComponentAnalysisRequest;
+import com.agentivy.backend.util.ContentExtractor;
 import com.google.adk.agents.LlmAgent;
 import com.google.adk.events.Event;
 import com.google.adk.runner.InMemoryRunner;
@@ -13,12 +14,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 
@@ -38,56 +39,9 @@ public class AgentController {
     private final LlmAgent componentAnalyzerAgent;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
-    /**
-     * Extract text content from an Optional<Content> object.
-     * Handles the nested Optional structure properly.
-     */
-    private String extractTextFromContent(java.util.Optional<Content> contentOpt) {
-        if (contentOpt == null || contentOpt.isEmpty()) {
-            return "";
-        }
-
-        Content content = contentOpt.get();
-        return content.parts().orElse(List.of()).stream()
-                .filter(part -> part.text().isPresent())
-                .map(part -> part.text().get())
-                .collect(Collectors.joining("\n"));
-    }
-
-    /**
-     * Extract a summary of the content including function calls.
-     * Returns either text content or a description of function calls.
-     */
-    private String extractContentSummary(java.util.Optional<Content> contentOpt) {
-        if (contentOpt == null || contentOpt.isEmpty()) {
-            return "";
-        }
-
-        Content content = contentOpt.get();
-        List<Part> parts = content.parts().orElse(List.of());
-
-        StringBuilder summary = new StringBuilder();
-
-        for (Part part : parts) {
-            // Add text content
-            if (part.text().isPresent()) {
-                summary.append(part.text().get()).append("\n");
-            }
-            // Add function call information
-            else if (part.functionCall().isPresent()) {
-                var functionCall = part.functionCall().get();
-                String functionName = functionCall.name().orElse("unknown");
-                summary.append("[Calling function: ").append(functionName).append("]\n");
-            }
-            // Add function response summary
-            else if (part.functionResponse().isPresent()) {
-                var functionResponse = part.functionResponse().get();
-                String functionName = functionResponse.name().orElse("unknown");
-                summary.append("[Function ").append(functionName).append(" completed]\n");
-            }
-        }
-
-        return summary.toString().trim();
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
     }
 
     /**
@@ -134,8 +88,8 @@ public class AgentController {
             eventStream.blockingForEach(event -> {
                 log.debug("Event [{}]: {}", event.author(), event.content());
 
-                String contentText = extractTextFromContent(event.content());
-                String contentSummary = extractContentSummary(event.content());
+                String contentText = ContentExtractor.extractText(event.content());
+                String contentSummary = ContentExtractor.extractSummary(event.content());
 
                 Map<String, Object> eventMap = Map.of(
                         "author", event.author() != null ? event.author() : "unknown",
@@ -199,7 +153,7 @@ public class AgentController {
                 eventStream.blockingForEach(event -> {
                     try {
                         String author = event.author() != null ? event.author() : "system";
-                        String content = extractContentSummary(event.content());
+                        String content = ContentExtractor.extractSummary(event.content());
 
                         emitter.send(SseEmitter.event()
                                 .name("event")

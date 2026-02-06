@@ -23,7 +23,7 @@ import java.util.*;
  * Provides Axe-core WCAG accessibility auditing for Angular components.
  *
  * WORKFLOW:
- * 1. ComponentScaffoldTool.loadComponentForTesting() → creates harness, returns fullTestUrl + testWrapperSelector
+ * 1. Extract metadata, generate harness code, and deploy using the atomic harness tools
  * 2. Start Angular dev server (ng serve)
  * 3. PlaywrightTools.runAccessibilityAudit(fullTestUrl, testWrapperSelector, "AA")
  */
@@ -107,7 +107,7 @@ public class PlaywrightTools implements ToolProvider {
      * Runs a WCAG accessibility audit using Axe-core.
      *
      * WHEN TO USE:
-     * - After creating a test harness with ComponentScaffoldTool
+     * - After creating a test harness with the atomic harness tools
      * - To identify WCAG violations in a component
      * - To verify accessibility fixes were applied
      *

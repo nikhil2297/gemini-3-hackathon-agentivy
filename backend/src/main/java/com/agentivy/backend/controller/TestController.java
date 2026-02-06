@@ -1,7 +1,9 @@
 package com.agentivy.backend.controller;
 
 import com.agentivy.backend.tools.angular.AngularDevServerTool;
-import com.agentivy.backend.tools.harness.ComponentScaffoldTool;
+import com.agentivy.backend.tools.harness.metadata.ComponentMetadataExtractorTool;
+import com.agentivy.backend.tools.harness.generator.HarnessCodeGeneratorTool;
+import com.agentivy.backend.tools.harness.deployer.HarnessDeployerTool;
 import com.agentivy.backend.tools.github.GitHubCloneTool;
 import com.agentivy.backend.tools.github.GitHubComponentScannerTool;
 import com.agentivy.backend.tools.github.GitHubFileReaderTool;
@@ -35,7 +37,9 @@ public class TestController {
     private final GitHubCloneTool gitHubCloneTool;
     private final GitHubComponentScannerTool gitHubComponentScannerTool;
     private final GitHubFileReaderTool gitHubFileReaderTool;
-    private final ComponentScaffoldTool componentScaffoldTool;
+    private final ComponentMetadataExtractorTool metadataExtractor;
+    private final HarnessCodeGeneratorTool codeGenerator;
+    private final HarnessDeployerTool harnessDeployer;
     private final AngularDevServerTool angularDevServerTool;
     private final PlaywrightTools playwrightTools;
 
@@ -109,27 +113,22 @@ public class TestController {
         return ResponseEntity.ok(result);
     }
 
-    // ==================== COMPONENT SCAFFOLD ====================
+    // ==================== COMPONENT HARNESS (Atomic Tools) ====================
 
     /**
-     * Create component test harness.
+     * Create component test harness using the atomic tool pipeline:
+     * 1. Extract metadata  2. Generate harness code  3. Deploy harness
      *
      * POST /api/v1/test/harness
      * {
      *   "repoPath": "/tmp/agentivy/repo-123",
-     *   "componentClassName": "TaskListComponent",
-     *   "componentImportPath": "../features/tasks/task-list.component",
-     *   "componentSelector": "app-task-list",
-     *   "componentInputs": "[tasks]=\"mockTasks\"",
-     *   "mockData": "mockTasks = [{id: 1, title: 'Test'}];",
-     *   "serviceMocks": "",
-     *   "serviceImportPaths": "",
-     *   "additionalImports": ""
+     *   "componentClassName": "TaskListComponent"
      * }
      */
     @PostMapping("/harness")
     public ResponseEntity<ImmutableMap<String, Object>> createHarness(@RequestBody Map<String, String> request) {
         String componentClassName = request.get("componentClassName");
+        String repoPath = request.getOrDefault("repoPath", "");
 
         if (componentClassName == null || componentClassName.isBlank()) {
             return ResponseEntity.badRequest().body(ImmutableMap.of(
@@ -141,19 +140,34 @@ public class TestController {
         log.info("Creating harness for: {}", componentClassName);
 
         try {
-            ImmutableMap<String, Object> result = componentScaffoldTool.loadComponentForTesting(
-                    request.getOrDefault("repoPath", ""),
-                    componentClassName,
-                    request.getOrDefault("componentImportPath", ""),
-                    request.getOrDefault("componentSelector", ""),
-                    request.getOrDefault("componentInputs", ""),
-                    request.getOrDefault("mockData", ""),
-                    request.getOrDefault("serviceMocks", ""),
-                    request.getOrDefault("serviceImportPaths", ""),
-                    request.getOrDefault("additionalImports", "")
-            ).blockingGet();
+            // Step 1: Extract metadata
+            ImmutableMap<String, Object> metadata = metadataExtractor
+                .extractComponentMetadata(repoPath, componentClassName)
+                .blockingGet();
 
-            return ResponseEntity.ok(result);
+            if ("error".equals(metadata.get("status"))) {
+                return ResponseEntity.badRequest().body(metadata);
+            }
+
+            String selector = (String) metadata.get("selector");
+            String importPath = (String) metadata.get("importPath");
+
+            // Step 2: Generate harness code
+            ImmutableMap<String, Object> codeResult = codeGenerator
+                .generateHarnessCode(componentClassName, selector, importPath, "", "", "", "")
+                .blockingGet();
+
+            if ("error".equals(codeResult.get("status"))) {
+                return ResponseEntity.badRequest().body(codeResult);
+            }
+
+            // Step 3: Deploy harness
+            String generatedCode = (String) codeResult.get("code");
+            ImmutableMap<String, Object> deployResult = harnessDeployer
+                .deployHarness(repoPath, generatedCode)
+                .blockingGet();
+
+            return ResponseEntity.ok(deployResult);
         } catch (Exception e) {
             log.error("Harness creation failed", e);
             return ResponseEntity.internalServerError().body(ImmutableMap.of(

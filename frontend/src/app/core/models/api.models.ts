@@ -413,6 +413,28 @@ export interface TestComponentRequest {
 }
 
 // ============================================
+// Tool Status Models
+// ============================================
+
+export interface ToolStatus {
+  tool: string;
+  status: 'starting' | 'in-progress' | 'completed' | 'failed' | 'stopped';
+  message: string;
+  metadata?: any;
+  timestamp: number;
+  result?: TestResult;
+  suggestion?: FixSuggestion;
+}
+
+export interface GroupedComponentResult {
+  componentName: string;
+  results: TestResult[];
+  tools: ToolStatus[];
+  overallStatus: ComponentStatus;
+  totalIssues: number;
+}
+
+// ============================================
 // UI State Models
 // ============================================
 

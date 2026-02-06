@@ -7,17 +7,17 @@ export const routes: Routes = [
   {
     path: '',
     component: HomeComponent,
-    title: 'GitHub Component Tester - Home',
+    title: 'AgentIvy - Home',
   },
   {
     path: 'configure',
     component: ConfigureComponent,
-    title: 'Configure Testing - GitHub Component Tester',
+    title: 'AgentIvy - Configure',
   },
   {
     path: 'results',
     component: ResultsComponent,
-    title: 'Test Results - GitHub Component Tester',
+    title: 'AgentIvy - Results',
   },
   {
     path: '**',

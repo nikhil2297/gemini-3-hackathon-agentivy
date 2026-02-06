@@ -191,13 +191,6 @@ export class WorkflowStateService {
   }
 
   /**
-   * Toggle a test type (alternative name)
-   */
-  toggleTestType(test: TestType): void {
-    this.toggleTest(test);
-  }
-
-  /**
    * Set action mode
    */
   setActionMode(mode: ActionMode): void {

@@ -1,10 +1,11 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   SSEEvent,
   SSEEventType,
   SuggestFixConfig,
 } from '../../models/api.models';
+import { API_BASE_URL } from '../../tokens/api.tokens';
 
 /**
  * Server-Sent Events (SSE) service
@@ -14,7 +15,7 @@ import {
   providedIn: 'root',
 })
 export class SseService {
-  private readonly apiBaseUrl = 'http://localhost:8080/api';
+  private readonly apiBaseUrl = inject(API_BASE_URL);
   private readonly reconnectDelay = 2000; // 2 seconds
   private readonly maxReconnectAttempts = 3;
 
@@ -75,7 +76,6 @@ export class SseService {
             throw new Error('Response body is null');
           }
 
-          console.log('[SSE] Connection established');
           reconnectAttempts = 0;
 
           const reader = response.body.getReader();
@@ -111,7 +111,6 @@ export class SseService {
           }
 
           if (!isClosed) {
-            console.log('[SSE] Stream ended');
             this.closeConnection(url);
             observer.complete();
           }
@@ -124,9 +123,6 @@ export class SseService {
 
           if (reconnectAttempts < this.maxReconnectAttempts && !isClosed) {
             reconnectAttempts++;
-            console.log(
-              `[SSE] Reconnecting... (Attempt ${reconnectAttempts}/${this.maxReconnectAttempts})`
-            );
             setTimeout(() => connect(), this.reconnectDelay);
           } else {
             observer.error({
@@ -192,7 +188,6 @@ export class SseService {
     if (controller) {
       controller.abort();
       this.activeConnections.delete(url);
-      console.log('[SSE] Connection closed');
     }
   }
 

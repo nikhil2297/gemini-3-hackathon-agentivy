@@ -1,34 +1,11 @@
 <div class="results-page">
   <div class="results-container">
     <!-- Header -->
-    <header class="results-header">
-      <div class="results-header__content">
-        <h1 class="heading-1">Test Results</h1>
-        <p class="text-secondary">
-          {{ repoInfo()?.repoUrl }} · Testing {{ selectedComponents().length }} component{{ selectedComponents().length
-          === 1 ? '' : 's' }}
-        </p>
-        @if (summary()) {
-        <div class="summary-stats">
-          <div class="summary-stat">
-            <span class="stat-label">Overall Status</span>
-            <app-status-badge [status]="getSummaryStatus(summary()?.overallStatus)" />
-          </div>
-          <div class="summary-stat">
-            <span class="stat-label">Overall Score</span>
-            <span class="stat-value" [class.score-good]="(summary()?.overallScore || 0) >= 90"
-              [class.score-warning]="(summary()?.overallScore || 0) < 90 && (summary()?.overallScore || 0) >= 50"
-              [class.score-bad]="(summary()?.overallScore || 0) < 50">
-              {{ summary()?.overallScore || 0 }}
-            </span>
-          </div>
-        </div>
-        }
-      </div>
-      <app-button variant="secondary" size="md" (clicked)="goBack()">
-        Back to Configure
-      </app-button>
-    </header>
+    <app-results-header
+      [repoUrl]="repoInfo()?.repoUrl || ''"
+      [componentCount]="selectedComponents().length"
+      [summary]="summary()"
+      (goBack)="goBack()" />
 
     <!-- Results Section -->
     <section class="results-section">
@@ -36,7 +13,7 @@
         <div>
           <h2 class="heading-2">Component Test Results</h2>
           <p class="text-secondary">
-            {{ getCompletedComponentsCount() }} of {{ selectedComponents().length }} completed
+            {{ sseProcessor.getCompletedComponentsCount() }} of {{ selectedComponents().length }} completed
           </p>
         </div>
       </div>
@@ -54,7 +31,7 @@
 
         <!-- Table Body -->
         <div class="table-body">
-          @for (component of groupedResults(); track component.componentName) {
+          @for (component of sseProcessor.groupedResults(); track component.componentName) {
           <div class="table-row-group">
             <!-- Main Row -->
             <button type="button" class="table-row" [class.table-row--expanded]="isExpanded(component.componentName)"
@@ -63,8 +40,7 @@
                 <span class="component-name">{{ component.componentName }}</span>
               </div>
               <div class="table-cell table-cell--tests">
-                <span class="test-count">{{ component.results.length }} test{{ component.results.length === 1 ? '' : 's'
-                  }}</span>
+                <span class="test-count">{{ component.results.length }} test{{ component.results.length === 1 ? '' : 's' }}</span>
               </div>
               <div class="table-cell table-cell--status">
                 <app-status-badge [status]="component.overallStatus" />
@@ -73,9 +49,7 @@
                 <span class="issue-count">{{ component.totalIssues }}</span>
               </div>
               <div class="table-cell table-cell--actions">
-                <span class="expand-icon" [class.expanded]="isExpanded(component.componentName)">
-                  ▼
-                </span>
+                <span class="expand-icon" [class.expanded]="isExpanded(component.componentName)">▼</span>
               </div>
             </button>
 
@@ -83,285 +57,15 @@
             @if (isExpanded(component.componentName)) {
             <div class="table-details">
               <div class="component-details">
-
                 <!-- Tool Progress Timeline -->
                 @if (component.tools && component.tools.length > 0) {
-                <div class="tools-timeline">
-                  <h3 class="timeline-heading">Test Progress</h3>
-                  @for (tool of component.tools; track tool.tool + tool.timestamp) {
-                  <div class="timeline-item" [class]="'timeline-item--' + tool.status">
-                    <div class="timeline-marker">
-                      @if (tool.status === 'starting' || tool.status === 'in-progress') {
-                      <app-spinner size="sm" />
-                      } @else if (tool.status === 'completed' || tool.status === 'stopped') {
-                      <span class="status-icon status-icon--success"> {{ tool.status === 'stopped' ? '■' : '✓'}}</span>
-                      } @else if (tool.status === 'failed') {
-                      <span class="status-icon status-icon--error">✕</span>
-                      }
-                    </div>
-                    <div class="timeline-content">
-                      <div class="timeline-header">
-                        <span class="tool-name">{{ formatToolName(tool.tool) }}</span>
-                        <span class="tool-status">{{ tool.status }}</span>
-                      </div>
-                      <p class="timeline-message">{{ tool.message }}</p>
-                      @if (tool.metadata && tool.status === 'in-progress' && tool.metadata.progressPercent) {
-                      <div class="timeline-progress">
-                        <div class="progress-bar-mini">
-                          <div class="progress-fill" [style.width.%]="tool.metadata.progressPercent"></div>
-                        </div>
-                        <span class="progress-text">{{ tool.metadata.progressPercent }}%</span>
-                      </div>
-                      }
-
-                      <!-- AI Suggestion Preview -->
-                      @if (tool.suggestion) {
-                      <div class="suggestion-preview">
-                        <div class="suggestion-meta">
-                          <span class="meta-item">
-                            <strong>Test Type:</strong> {{ tool.suggestion.testType }}
-                          </span>
-                          <span class="meta-item">
-                            <strong>Violations:</strong> {{ tool.suggestion.violations?.violationCount || 0 }}
-                          </span>
-                          <span class="meta-item severity-badge" [class]="'severity-' + tool.suggestion.severity">
-                            Severity {{ tool.suggestion.severity }}
-                          </span>
-                        </div>
-                        @if (tool.suggestion.explanation && tool.suggestion.explanation !== 'No explanation provided') {
-                        <p class="suggestion-explanation">{{ tool.suggestion.explanation }}</p>
-                        }
-                        <p class="suggestion-note">Full fix code available in the results section below</p>
-                      </div>
-                      }
-                    </div>
-                  </div>
-                  }
-                </div>
+                  <app-tool-timeline [tools]="component.tools" />
                 }
 
                 <!-- Test Results Grid -->
                 <div class="test-results-grid">
                   @for (result of component.results; track result.testType) {
-                  <div class="test-result-card">
-                    <div class="test-result-header">
-                      <div class="test-result-title">
-                        <span class="test-type-badge">{{ result.testType }}</span>
-                        <app-status-badge [status]="result.status" />
-                      </div>
-                      @if (result.testType === 'accessibility' && result.violations) {
-                      <div class="test-result-summary">
-                        <span class="summary-item">
-                          <strong>{{ result.violations.violationCount || 0 }}</strong> violations
-                        </span>
-                        <span class="summary-item">
-                          <strong>{{ result.violations.warningCount || 0 }}</strong> warnings
-                        </span>
-                      </div>
-                      }
-                      @if (result.testType === 'performance' && result.metrics) {
-                      <div class="test-result-summary">
-                        <span class="summary-item">
-                          <strong>{{ result.metrics.performanceScore || 0 }}/100</strong> score
-                        </span>
-                        <span class="summary-item">
-                          <strong>{{ result.metrics.loadTime || 0 }}ms</strong> load time
-                        </span>
-                      </div>
-                      }
-                    </div>
-
-                    <!-- Accessibility Details (Standard - legacy fallback) -->
-                    @if (result.testType === 'accessibility' && (!result.details || result.details.length === 0) &&
-                    result.violations && result.violations.violations &&
-                    result.violations.violations.length > 0) {
-                    <div class="test-result-content">
-                      <h4 class="content-heading">Violations Details</h4>
-                      <div class="violations-list">
-                        @for (violation of result.violations.violations; track violation.id) {
-                        <div class="violation-item">
-                          <div class="violation-header">
-                            <span class="violation-impact" [class]="'impact-' + violation.impact">
-                              {{ violation.impact }}
-                            </span>
-                            <span class="violation-id">{{ violation.id }}</span>
-                          </div>
-                          <p class="violation-description">{{ violation.description }}</p>
-                          @if (violation.nodes && violation.nodes.length > 0) {
-                          <div class="violation-nodes">
-                            <span class="nodes-count">{{ violation.nodes.length }} element(s) affected</span>
-                          </div>
-                          }
-                        </div>
-                        }
-                      </div>
-                    </div>
-                    }
-                    <!-- Accessibility Details (Rich from component-result) -->
-                    @if (result.testType === 'accessibility' && result.details && result.details.length > 0) {
-                    <div class="test-result-content">
-                      <h4 class="content-heading">Detailed Issues & Fixes</h4>
-                      <div class="files-list">
-                        @for (fileDetail of result.details; track fileDetail.file) {
-                        <div class="file-detail-group">
-                          <h5 class="file-name">{{ fileDetail.file }}</h5>
-                          <div class="violations-list">
-                            @for (issue of fileDetail.issues; track issue.id + issue.line + issue.element) {
-                            <div class="violation-item">
-                              <div class="violation-header">
-                                <span class="violation-impact" [class]="'impact-' + issue.severity">
-                                  {{ issue.severity }}
-                                </span>
-                                <span class="violation-id">{{ issue.id }}</span>
-                              </div>
-
-                              <div class="violation-content">
-                                <p class="violation-description">{{ issue.suggestion }}</p>
-
-                                <div class="violation-element">
-                                  <code>{{ issue.element }}</code>
-                                </div>
-
-                                @if (issue.actionableDetails) {
-                                <div class="actionable-details">
-                                  <!-- Color Contrast Specifics -->
-                                  @if (issue.actionableDetails.violationType === 'color-contrast') {
-                                  <div class="contrast-details">
-                                    <div class="contrast-metrics">
-                                      <div class="metric">
-                                        <span class="label">Current Ratio</span>
-                                        <span class="value value-bad">{{ issue.actionableDetails.contrastRatio
-                                          }}:1</span>
-                                      </div>
-                                      <div class="metric">
-                                        <span class="label">Required</span>
-                                        <span class="value">{{ issue.actionableDetails.expectedRatio }}</span>
-                                      </div>
-                                    </div>
-
-                                    @if (issue.actionableDetails.suggestedColorOptions &&
-                                    issue.actionableDetails.suggestedColorOptions.length > 0) {
-                                    <div class="color-options">
-                                      <h6>Suggested Colors:</h6>
-                                      <div class="color-grid">
-                                        @for (option of issue.actionableDetails.suggestedColorOptions; track
-                                        option.color) {
-                                        <div class="color-option">
-                                          <div class="color-swatch" [style.background-color]="option.color"></div>
-                                          <div class="color-info">
-                                            <span class="color-hex">{{ option.color }}</span>
-                                            <span class="color-ratio">{{ option.ratio }}</span>
-                                            <span class="color-status">{{ option.status }}</span>
-                                          </div>
-                                        </div>
-                                        }
-                                      </div>
-                                    </div>
-                                    }
-                                  </div>
-                                  }
-
-                                  <!-- General Suggested Fix -->
-                                  @if (issue.actionableDetails.suggestedFix) {
-                                  <div class="fix-suggestion-box">
-                                    <h6>💡 Suggested Fix</h6>
-                                    <p>{{ issue.actionableDetails.suggestedFix }}</p>
-
-                                    @if (issue.actionableDetails.exampleFix) {
-                                    <app-code-block [code]="issue.actionableDetails.exampleFix" language="html"
-                                      [showLineNumbers]="false" />
-                                    }
-                                  </div>
-                                  }
-
-                                  <!-- Learn More -->
-                                  @if (issue.actionableDetails.wcagGuideline) {
-                                  <p class="wcag-ref text-tertiary">
-                                    Reference: {{ issue.actionableDetails.wcagGuideline }}
-                                  </p>
-                                  }
-                                </div>
-                                }
-                              </div>
-                            </div>
-                            }
-                          </div>
-                        </div>
-                        }
-                      </div>
-                    </div>
-                    } <!-- Performance Details -->
-                    @if (result.testType === 'performance' && result.metrics) {
-                    <div class="test-result-content">
-                      <h4 class="content-heading">Performance Metrics</h4>
-                      <div class="metrics-grid">
-                        @if (result.metrics.loadTime) {
-                        <div class="metric-item">
-                          <span class="metric-label">Load Time</span>
-                          <span class="metric-value">{{ result.metrics.loadTime }}ms</span>
-                        </div>
-                        }
-                        @if (result.metrics.renderTime) {
-                        <div class="metric-item">
-                          <span class="metric-label">Render Time</span>
-                          <span class="metric-value">{{ result.metrics.renderTime }}ms</span>
-                        </div>
-                        }
-                        @if (result.metrics.bundleSize) {
-                        <div class="metric-item">
-                          <span class="metric-label">Bundle Size</span>
-                          <span class="metric-value">{{ formatBytes(result.metrics.bundleSize) }}</span>
-                        </div>
-                        }
-                        @if (result.metrics.memoryUsage) {
-                        <div class="metric-item">
-                          <span class="metric-label">Memory Usage</span>
-                          <span class="metric-value">{{ formatBytes(result.metrics.memoryUsage) }}</span>
-                        </div>
-                        }
-                      </div>
-                    </div>
-                    }
-
-                    <!-- Suggested Fix -->
-                    @if (result.suggestedFix) {
-                    <div class="test-result-content">
-                      <h4 class="content-heading">AI-Suggested Fix</h4>
-                      @if (result.explanation) {
-                      <p class="fix-explanation">{{ result.explanation }}</p>
-                      }
-                      <app-code-block [code]="result.suggestedFix" [language]="'typescript'" [showLineNumbers]="true" />
-                      @if (result.filePath) {
-                      <p class="file-path">
-                        <strong>File:</strong> {{ result.filePath }}
-                      </p>
-                      }
-                    </div>
-                    }
-
-                    <!-- Error Message -->
-                    @if (result.errorMessage) {
-                    <div class="test-result-content">
-                      <div class="error-box">
-                        <h4 class="content-heading">Error Details</h4>
-                        <p class="error-message">{{ result.errorMessage }}</p>
-                      </div>
-                    </div>
-                    }
-
-                    <!-- Empty Success State -->
-                    @if (result.status === 'passed' &&
-                    (!result.violations || (result.violations.violationCount === 0 && result.violations.warningCount ===
-                    0)) &&
-                    (!result.details || result.details.length === 0) &&
-                    (!result.metrics || result.testType !== 'performance') &&
-                    !result.suggestedFix && !result.errorMessage) {
-                    <div class="test-result-content empty-success">
-                      <div class="success-icon-large">✓</div>
-                      <p>No issues found. This component meets all {{ result.testType }} requirements.</p>
-                    </div>
-                    }
-                  </div>
+                    <app-test-result-card [result]="result" />
                   }
                 </div>
               </div>
@@ -382,15 +86,10 @@
     </section>
 
     <!-- Actions Footer -->
-    @if (!isAnalyzing() && groupedResults().length > 0) {
-    <footer class="results-actions">
-      <app-button variant="secondary" size="md" (clicked)="exportResults()">
-        Export Results
-      </app-button>
-      <app-button variant="primary" size="md" (clicked)="startNewTest()">
-        Start New Test
-      </app-button>
-    </footer>
-    }
+    <app-results-footer
+      [isAnalyzing]="isAnalyzing()"
+      [hasResults]="sseProcessor.groupedResults().length > 0"
+      (exportResults)="exportResults()"
+      (startNewTest)="startNewTest()" />
   </div>
 </div>

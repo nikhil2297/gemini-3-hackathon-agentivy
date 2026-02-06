@@ -1,0 +1,84 @@
+<div class="test-result-content">
+  <h4 class="content-heading">Detailed Issues & Fixes</h4>
+  <div class="files-list">
+    @for (fileDetail of details(); track fileDetail.file) {
+    <div class="file-detail-group">
+      <h5 class="file-name">{{ fileDetail.file }}</h5>
+      <div class="violations-list">
+        @for (issue of fileDetail.issues; track issue.id + issue.line + issue.element) {
+        <div class="violation-item">
+          <div class="violation-header">
+            <span class="violation-impact" [class]="'impact-' + issue.severity">
+              {{ issue.severity }}
+            </span>
+            <span class="violation-id">{{ issue.id }}</span>
+          </div>
+
+          <div class="violation-content">
+            <p class="violation-description">{{ issue.suggestion }}</p>
+
+            <div class="violation-element">
+              <code>{{ issue.element }}</code>
+            </div>
+
+            @if (issue.actionableDetails) {
+            <div class="actionable-details">
+              @if (issue.actionableDetails.violationType === 'color-contrast') {
+              <div class="contrast-details">
+                <div class="contrast-metrics">
+                  <div class="metric">
+                    <span class="label">Current Ratio</span>
+                    <span class="value value-bad">{{ issue.actionableDetails.contrastRatio }}:1</span>
+                  </div>
+                  <div class="metric">
+                    <span class="label">Required</span>
+                    <span class="value">{{ issue.actionableDetails.expectedRatio }}</span>
+                  </div>
+                </div>
+
+                @if (issue.actionableDetails.suggestedColorOptions && issue.actionableDetails.suggestedColorOptions.length > 0) {
+                <div class="color-options">
+                  <h6>Suggested Colors:</h6>
+                  <div class="color-grid">
+                    @for (option of issue.actionableDetails.suggestedColorOptions; track option.color) {
+                    <div class="color-option">
+                      <div class="color-swatch" [style.background-color]="option.color"></div>
+                      <div class="color-info">
+                        <span class="color-hex">{{ option.color }}</span>
+                        <span class="color-ratio">{{ option.ratio }}</span>
+                        <span class="color-status">{{ option.status }}</span>
+                      </div>
+                    </div>
+                    }
+                  </div>
+                </div>
+                }
+              </div>
+              }
+
+              @if (issue.actionableDetails.suggestedFix) {
+              <div class="fix-suggestion-box">
+                <h6>Suggested Fix</h6>
+                <p>{{ issue.actionableDetails.suggestedFix }}</p>
+
+                @if (issue.actionableDetails.exampleFix) {
+                <app-code-block [code]="issue.actionableDetails.exampleFix" language="html" [showLineNumbers]="false" />
+                }
+              </div>
+              }
+
+              @if (issue.actionableDetails.wcagGuideline) {
+              <p class="wcag-ref text-tertiary">
+                Reference: {{ issue.actionableDetails.wcagGuideline }}
+              </p>
+              }
+            </div>
+            }
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+</div>

@@ -84,7 +84,7 @@ export class ConfigureComponent implements OnInit {
   }
 
   toggleTestType(testType: TestType): void {
-    this.workflowState.toggleTestType(testType);
+    this.workflowState.toggleTest(testType);
   }
 
   selectActionMode(mode: ActionMode): void {

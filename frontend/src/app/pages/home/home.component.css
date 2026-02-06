@@ -7,7 +7,7 @@
   /* Hero Section */
   .hero {
     position: relative;
-    padding-block: calc(var(--spacing) * 24) calc(var(--spacing) * 16);
+    padding-block: calc(var(--spacing) * 8) calc(var(--spacing) * 16);
     padding-inline: calc(var(--spacing) * 6);
   }
 
@@ -35,12 +35,11 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: calc(var(--spacing) * 8);
+    gap: calc(var(--spacing) * 2);
   }
 
   .hero__badge {
     @apply inline-flex items-center bg-surface border border-border text-muted;
-    gap: calc(var(--spacing) * 2);
     padding-inline: calc(var(--spacing) * 4);
     padding-block: calc(var(--spacing) * 2);
     border-radius: 9999px;
@@ -51,10 +50,16 @@
     @apply text-accent;
   }
 
+  .hero__logo {
+    margin-top: 8px;
+    width: 150px;
+    height: 150px;
+    object-fit: contain;
+  }
+
   .hero__title {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--spacing) * 3);
   }
 
   .hero__brand {
@@ -62,7 +67,6 @@
     font-weight: 700;
     @apply text-foreground;
     letter-spacing: -0.03em;
-    line-height: 1;
     background: linear-gradient(135deg,
         var(--color-foreground) 0%,
         var(--color-accent) 100%);

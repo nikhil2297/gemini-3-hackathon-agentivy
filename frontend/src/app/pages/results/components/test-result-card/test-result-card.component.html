@@ -1,0 +1,77 @@
+<div class="test-result-card">
+  <div class="test-result-header">
+    <div class="test-result-title">
+      <span class="test-type-badge">{{ result().testType }}</span>
+      <app-status-badge [status]="result().status" />
+    </div>
+    @if (result().testType === 'accessibility' && result().violations) {
+    <div class="test-result-summary">
+      <span class="summary-item">
+        <strong>{{ result().violations!.violationCount || 0 }}</strong> violations
+      </span>
+      <span class="summary-item">
+        <strong>{{ result().violations!.warningCount || 0 }}</strong> warnings
+      </span>
+    </div>
+    }
+    @if (result().testType === 'performance' && result().metrics) {
+    <div class="test-result-summary">
+      <span class="summary-item">
+        <strong>{{ result().metrics!.performanceScore || 0 }}/100</strong> score
+      </span>
+      <span class="summary-item">
+        <strong>{{ result().metrics!.loadTime || 0 }}ms</strong> load time
+      </span>
+    </div>
+    }
+  </div>
+
+  <!-- Accessibility Details (Legacy) -->
+  @if (hasLegacyViolations) {
+    <app-accessibility-violations [violations]="result().violations!.violations!" />
+  }
+
+  <!-- Accessibility Details (Rich) -->
+  @if (hasRichDetails) {
+    <app-accessibility-details [details]="result().details!" />
+  }
+
+  <!-- Performance Details -->
+  @if (hasPerformanceMetrics) {
+    <app-performance-metrics [metrics]="result().metrics!" />
+  }
+
+  <!-- Suggested Fix -->
+  @if (result().suggestedFix) {
+  <div class="test-result-content">
+    <h4 class="content-heading">AI-Suggested Fix</h4>
+    @if (result().explanation) {
+    <p class="fix-explanation">{{ result().explanation }}</p>
+    }
+    <app-code-block [code]="result().suggestedFix!" [language]="'typescript'" [showLineNumbers]="true" />
+    @if (result().filePath) {
+    <p class="file-path">
+      <strong>File:</strong> {{ result().filePath }}
+    </p>
+    }
+  </div>
+  }
+
+  <!-- Error Message -->
+  @if (result().errorMessage) {
+  <div class="test-result-content">
+    <div class="error-box">
+      <h4 class="content-heading">Error Details</h4>
+      <p class="error-message">{{ result().errorMessage }}</p>
+    </div>
+  </div>
+  }
+
+  <!-- Empty Success State -->
+  @if (isEmptySuccess) {
+  <div class="test-result-content empty-success">
+    <div class="success-icon-large">✓</div>
+    <p>No issues found. This component meets all {{ result().testType }} requirements.</p>
+  </div>
+  }
+</div>

@@ -1,0 +1,29 @@
+<div class="test-result-content">
+  <h4 class="content-heading">Performance Metrics</h4>
+  <div class="metrics-grid">
+    @if (metrics().loadTime) {
+    <div class="metric-item">
+      <span class="metric-label">Load Time</span>
+      <span class="metric-value">{{ metrics().loadTime }}ms</span>
+    </div>
+    }
+    @if (metrics().renderTime) {
+    <div class="metric-item">
+      <span class="metric-label">Render Time</span>
+      <span class="metric-value">{{ metrics().renderTime }}ms</span>
+    </div>
+    }
+    @if (metrics().bundleSize) {
+    <div class="metric-item">
+      <span class="metric-label">Bundle Size</span>
+      <span class="metric-value">{{ formatBytes(metrics().bundleSize!) }}</span>
+    </div>
+    }
+    @if (metrics().memoryUsage) {
+    <div class="metric-item">
+      <span class="metric-label">Memory Usage</span>
+      <span class="metric-value">{{ formatBytes(metrics().memoryUsage!) }}</span>
+    </div>
+    }
+  </div>
+</div>

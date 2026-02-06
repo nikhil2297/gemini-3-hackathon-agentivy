@@ -1,0 +1,10 @@
+@if (!isAnalyzing() && hasResults()) {
+<footer class="results-actions">
+  <app-button variant="secondary" size="md" (clicked)="exportResults.emit()">
+    Export Results
+  </app-button>
+  <app-button variant="primary" size="md" (clicked)="startNewTest.emit()">
+    Start New Test
+  </app-button>
+</footer>
+}

@@ -1,0 +1,95 @@
+<div class="results-page">
+  <div class="results-container">
+    <!-- Header -->
+    <app-results-header
+      [repoUrl]="repoInfo()?.repoUrl || ''"
+      [componentCount]="selectedComponents().length"
+      [summary]="summary()"
+      (goBack)="goBack()" />
+
+    <!-- Results Section -->
+    <section class="results-section">
+      <div class="section-header">
+        <div>
+          <h2 class="heading-2">Component Test Results</h2>
+          <p class="text-secondary">
+            {{ sseProcessor.getCompletedComponentsCount() }} of {{ selectedComponents().length }} completed
+          </p>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="results-table">
+        <!-- Table Header -->
+        <div class="table-header">
+          <div class="table-cell table-cell--component">Component</div>
+          <div class="table-cell table-cell--tests">Tests Run</div>
+          <div class="table-cell table-cell--status">Overall Status</div>
+          <div class="table-cell table-cell--issues">Total Issues</div>
+          <div class="table-cell table-cell--actions"></div>
+        </div>
+
+        <!-- Table Body -->
+        <div class="table-body">
+          @for (component of sseProcessor.groupedResults(); track component.componentName) {
+          <div class="table-row-group">
+            <!-- Main Row -->
+            <button type="button" class="table-row" [class.table-row--expanded]="isExpanded(component.componentName)"
+              (click)="toggleExpand(component.componentName)">
+              <div class="table-cell table-cell--component">
+                <span class="component-name">{{ component.componentName }}</span>
+              </div>
+              <div class="table-cell table-cell--tests">
+                <span class="test-count">{{ component.results.length }} test{{ component.results.length === 1 ? '' : 's' }}</span>
+              </div>
+              <div class="table-cell table-cell--status">
+                <app-status-badge [status]="component.overallStatus" />
+              </div>
+              <div class="table-cell table-cell--issues">
+                <span class="issue-count">{{ component.totalIssues }}</span>
+              </div>
+              <div class="table-cell table-cell--actions">
+                <span class="expand-icon" [class.expanded]="isExpanded(component.componentName)">▼</span>
+              </div>
+            </button>
+
+            <!-- Expanded Details -->
+            @if (isExpanded(component.componentName)) {
+            <div class="table-details">
+              <div class="component-details">
+                <!-- Tool Progress Timeline -->
+                @if (component.tools && component.tools.length > 0) {
+                  <app-tool-timeline [tools]="component.tools" />
+                }
+
+                <!-- Test Results Grid -->
+                <div class="test-results-grid">
+                  @for (result of component.results; track result.testType) {
+                    <app-test-result-card [result]="result" />
+                  }
+                </div>
+              </div>
+            </div>
+            }
+          </div>
+          } @empty {
+          <div class="table-empty">
+            @if (isAnalyzing()) {
+            <app-spinner size="lg" message="Starting tests..." />
+            } @else {
+            <p class="text-secondary">No results available</p>
+            }
+          </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions Footer -->
+    <app-results-footer
+      [isAnalyzing]="isAnalyzing()"
+      [hasResults]="sseProcessor.groupedResults().length > 0"
+      (exportResults)="exportResults()"
+      (startNewTest)="startNewTest()" />
+  </div>
+</div>

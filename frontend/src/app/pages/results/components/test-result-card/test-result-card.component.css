@@ -1,0 +1,123 @@
+.test-result-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.test-result-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.test-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.test-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  background: var(--color-code);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.test-result-summary {
+  display: flex;
+  gap: 1.5rem;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.summary-item strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+
+.test-result-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.content-heading {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.fix-explanation {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.file-path {
+  margin: 0.75rem 0 0 0;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  word-break: break-all;
+}
+
+.error-box {
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+}
+
+.error-box .content-heading {
+  color: #991B1B;
+}
+
+.error-message {
+  margin: 0.5rem 0 0 0;
+  color: #991B1B;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.empty-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.success-icon-large {
+  width: 48px;
+  height: 48px;
+  background-color: #D1FAE5;
+  color: #10B981;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.empty-success p {
+  margin: 0;
+  max-width: 250px;
+  line-height: 1.5;
+}

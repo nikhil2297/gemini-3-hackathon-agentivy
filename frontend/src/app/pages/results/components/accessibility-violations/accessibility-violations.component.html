@@ -1,0 +1,21 @@
+<div class="test-result-content">
+  <h4 class="content-heading">Violations Details</h4>
+  <div class="violations-list">
+    @for (violation of violations(); track violation.id) {
+    <div class="violation-item">
+      <div class="violation-header">
+        <span class="violation-impact" [class]="'impact-' + violation.impact">
+          {{ violation.impact }}
+        </span>
+        <span class="violation-id">{{ violation.id }}</span>
+      </div>
+      <p class="violation-description">{{ violation.description }}</p>
+      @if (violation.nodes && violation.nodes.length > 0) {
+      <div class="violation-nodes">
+        <span class="nodes-count">{{ violation.nodes.length }} element(s) affected</span>
+      </div>
+      }
+    </div>
+    }
+  </div>
+</div>

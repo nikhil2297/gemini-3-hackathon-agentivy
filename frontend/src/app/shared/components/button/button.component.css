@@ -1,0 +1,144 @@
+@layer components {
+  .button {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+    font-weight: 500;
+    transition: all 200ms;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+
+  .button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--tw-ring-color, var(--color-accent));
+  }
+
+  /* Primary variant */
+  .button--primary {
+    background-color: var(--color-accent);
+    color: white;
+  }
+
+  .button--primary:hover:not(.button--disabled) {
+    background-color: var(--color-accent-hover);
+  }
+
+  .button--primary:focus {
+    --tw-ring-color: var(--color-accent);
+  }
+
+  /* Secondary variant */
+  .button--secondary {
+    background-color: var(--color-surface);
+    color: var(--color-foreground);
+    border: 1px solid var(--color-border);
+  }
+
+  .button--secondary:hover:not(.button--disabled) {
+    background-color: var(--color-background);
+  }
+
+  /* Ghost variant */
+  .button--ghost {
+    background-color: transparent;
+    color: var(--color-muted);
+  }
+
+  .button--ghost:hover:not(.button--disabled) {
+    background-color: var(--color-sidebar-hover);
+  }
+
+  /* Sizes */
+  .button--sm {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+    font-size: 0.875rem;
+  }
+
+  .button--md {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+    font-size: 1rem;
+  }
+
+  .button--lg {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    font-size: 1.125rem;
+  }
+
+  /* States */
+  .button--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .button--full-width {
+    width: 100%;
+  }
+
+  .button--loading {
+    position: relative;
+  }
+
+  /* Button content */
+  .button__content {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .button__content--hidden {
+    visibility: hidden;
+  }
+
+  /* Spinner for loading state */
+  .button__spinner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+  }
+
+  .spinner-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background-color: currentColor;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .spinner-dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .spinner-dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}

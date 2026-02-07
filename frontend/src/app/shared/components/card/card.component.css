@@ -1,0 +1,43 @@
+@layer components {
+  .card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .card__header {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .card__title {
+    font-weight: 600;
+    color: var(--color-foreground);
+    font-size: 1.25rem;
+  }
+
+  .card__subtitle {
+    color: var(--color-muted);
+    font-size: 0.875rem;
+  }
+
+  .card__body {
+    padding: 1.5rem;
+  }
+
+  .card__body--no-padding {
+    padding: 0;
+  }
+
+  /* Footer is added via ng-content with [footer] selector */
+  .card ::ng-deep [footer] {
+    padding: 1.5rem;
+    background-color: var(--color-background);
+    border-top: 1px solid var(--color-border);
+  }
+}

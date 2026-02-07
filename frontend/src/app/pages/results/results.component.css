@@ -1,0 +1,242 @@
+/* Results Page Layout */
+.results-page {
+  min-height: 100vh;
+  background: var(--color-background);
+  padding: 2rem 1.5rem;
+}
+
+.results-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Results Section */
+.results-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.section-header h2 {
+  margin: 0 0 0.25rem 0;
+}
+
+.section-header p {
+  margin: 0;
+}
+
+/* Results Table */
+.results-table {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Table Header */
+.table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.2fr 1fr 60px;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Table Body */
+.table-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.table-row-group {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.table-row-group:last-child {
+  border-bottom: none;
+}
+
+/* Table Row */
+.table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.2fr 1fr 60px;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  width: 100%;
+  background: var(--color-surface);
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.table-row:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.table-row--expanded {
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Table Cells */
+.table-cell {
+  display: flex;
+  align-items: center;
+}
+
+.table-cell--component {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+
+.table-cell--tests,
+.table-cell--issues {
+  color: var(--color-muted);
+}
+
+.table-cell--actions {
+  justify-content: flex-end;
+}
+
+/* Component Name */
+.component-name {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Test Count & Issue Count */
+.test-count,
+.issue-count {
+  font-size: 0.875rem;
+}
+
+/* Expand Icon */
+.expand-icon {
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+}
+
+.expand-icon.expanded {
+  transform: rotate(0deg);
+}
+
+/* Table Details (Expanded Content) */
+.table-details {
+  background: var(--color-background);
+  padding: 2rem 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.component-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Test Results Grid */
+.test-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Table Empty State */
+.table-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: var(--color-muted);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .test-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-header,
+  .table-row {
+    grid-template-columns: 1.5fr 1fr 1fr 1fr 50px;
+  }
+
+  .table-cell--tests {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .results-page {
+    padding: 1rem;
+  }
+
+  .table-header {
+    display: none;
+  }
+
+  .table-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 1rem;
+    position: relative;
+  }
+
+  .table-cell--component {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .table-cell--tests,
+  .table-cell--status,
+  .table-cell--issues {
+    display: inline-flex;
+    margin-right: 1rem;
+  }
+
+  .table-cell--actions {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+  }
+
+  .table-details {
+    padding: 1.5rem 1rem;
+  }
+
+  .test-results-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .results-container {
+    gap: 1.5rem;
+  }
+
+  .table-row {
+    padding: 0.875rem;
+  }
+
+  .table-details {
+    padding: 1rem;
+  }
+}

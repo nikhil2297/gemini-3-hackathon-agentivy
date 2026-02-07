@@ -1,0 +1,27 @@
+<header class="results-header">
+  <div class="results-header__content">
+    <h1 class="heading-1">Test Results</h1>
+    <p class="text-secondary">
+      {{ repoUrl() }} · Testing {{ componentCount() }} component{{ componentCount() === 1 ? '' : 's' }}
+    </p>
+    @if (summary()) {
+    <div class="summary-stats">
+      <div class="summary-stat">
+        <span class="stat-label">Overall Status</span>
+        <app-status-badge [status]="getSummaryStatus(summary()?.overallStatus)" />
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Overall Score</span>
+        <span class="stat-value" [class.score-good]="(summary()?.overallScore || 0) >= 90"
+          [class.score-warning]="(summary()?.overallScore || 0) < 90 && (summary()?.overallScore || 0) >= 50"
+          [class.score-bad]="(summary()?.overallScore || 0) < 50">
+          {{ summary()?.overallScore || 0 }}
+        </span>
+      </div>
+    </div>
+    }
+  </div>
+  <app-button variant="secondary" size="md" (clicked)="goBack.emit()">
+    Back to Configure
+  </app-button>
+</header>

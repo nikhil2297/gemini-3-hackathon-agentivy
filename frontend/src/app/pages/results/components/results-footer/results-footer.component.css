@@ -1,0 +1,17 @@
+.results-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 768px) {
+  .results-actions {
+    flex-direction: column;
+  }
+
+  .results-actions ::ng-deep app-button {
+    width: 100%;
+  }
+}

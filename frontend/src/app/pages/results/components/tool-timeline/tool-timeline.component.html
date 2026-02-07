@@ -1,0 +1,51 @@
+<div class="tools-timeline">
+  <h3 class="timeline-heading">Test Progress</h3>
+  @for (tool of tools(); track tool.tool + tool.timestamp) {
+  <div class="timeline-item" [class]="'timeline-item--' + tool.status">
+    <div class="timeline-marker">
+      @if (tool.status === 'starting' || tool.status === 'in-progress') {
+      <app-spinner size="sm" />
+      } @else if (tool.status === 'completed' || tool.status === 'stopped') {
+      <span class="status-icon status-icon--success">{{ tool.status === 'stopped' ? '■' : '✓' }}</span>
+      } @else if (tool.status === 'failed') {
+      <span class="status-icon status-icon--error">✕</span>
+      }
+    </div>
+    <div class="timeline-content">
+      <div class="timeline-header">
+        <span class="tool-name">{{ formatToolName(tool.tool) }}</span>
+        <span class="tool-status">{{ tool.status }}</span>
+      </div>
+      <p class="timeline-message">{{ tool.message }}</p>
+      @if (tool.metadata && tool.status === 'in-progress' && tool.metadata.progressPercent) {
+      <div class="timeline-progress">
+        <div class="progress-bar-mini">
+          <div class="progress-fill" [style.width.%]="tool.metadata.progressPercent"></div>
+        </div>
+        <span class="progress-text">{{ tool.metadata.progressPercent }}%</span>
+      </div>
+      }
+
+      @if (tool.suggestion) {
+      <div class="suggestion-preview">
+        <div class="suggestion-meta">
+          <span class="meta-item">
+            <strong>Test Type:</strong> {{ tool.suggestion.testType }}
+          </span>
+          <span class="meta-item">
+            <strong>Violations:</strong> {{ tool.suggestion.violations.violationCount || 0 }}
+          </span>
+          <span class="meta-item severity-badge" [class]="'severity-' + tool.suggestion.severity">
+            Severity {{ tool.suggestion.severity }}
+          </span>
+        </div>
+        @if (tool.suggestion.explanation && tool.suggestion.explanation !== 'No explanation provided') {
+        <p class="suggestion-explanation">{{ tool.suggestion.explanation }}</p>
+        }
+        <p class="suggestion-note">Full fix code available in the results section below</p>
+      </div>
+      }
+    </div>
+  </div>
+  }
+</div>

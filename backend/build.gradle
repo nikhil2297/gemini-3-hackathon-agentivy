@@ -26,10 +26,8 @@ repositories {
 
 dependencies {
     implementation 'com.google.adk:google-adk:0.5.0'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	compileOnly 'org.projectlombok:lombok'
-	runtimeOnly 'com.h2database:h2'
 //	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
 
@@ -37,9 +35,9 @@ dependencies {
     implementation 'org.eclipse.jgit:org.eclipse.jgit:7.5.0.202512021534-r'
 
     implementation 'com.microsoft.playwright:playwright:1.57.0'
+    implementation 'io.github.cdimascio:dotenv-java:3.2.0'
 
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

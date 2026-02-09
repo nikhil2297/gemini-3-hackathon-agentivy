@@ -20,9 +20,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.annotation.PreDestroy;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Complete workflow API for component testing.
@@ -43,6 +46,14 @@ public class ComponentTestWorkflowController {
     private final AccessibilityFixerTool accessibilityFixer;
     private final PerformanceFixerTool performanceFixer;
     private final SseEventPublisher sseEventPublisher;
+
+    // Dedicated executor for long-running SSE workflows (avoids ForkJoinPool issues)
+    private final ExecutorService workflowExecutor = Executors.newCachedThreadPool();
+
+    @PreDestroy
+    public void shutdown() {
+        workflowExecutor.shutdown();
+    }
 
     @PostMapping("/test-component")
     public ResponseEntity<Map<String, Object>> testComponent(@RequestBody TestComponentRequest request) {
@@ -530,7 +541,7 @@ public class ComponentTestWorkflowController {
         // Send initial "started" event
         sseEventPublisher.publishStarted(sessionId, repoPath);
 
-        // Execute workflow asynchronously
+        // Execute workflow asynchronously using dedicated executor
         CompletableFuture.runAsync(() -> {
             try {
                 // Set session context for this thread
@@ -548,8 +559,16 @@ public class ComponentTestWorkflowController {
                 // If specific component is provided, test just that one
                 // Otherwise, we need to scan for all components first
                 if (componentClassName != null && !componentClassName.isEmpty()) {
-                    testAndSuggestFixesForComponent(sessionId, repoPath, componentClassName, testList,
-                        tsPath, htmlPath, null, null);
+                    try {
+                        testAndSuggestFixesForComponent(sessionId, repoPath, componentClassName, testList,
+                            tsPath, htmlPath, null, null);
+                    } catch (Exception compEx) {
+                        log.error("Error testing component {}: {}", componentClassName, compEx.getMessage(), compEx);
+                        sseEventPublisher.publishComponentStatus(sessionId, componentClassName,
+                            "test", "failed",
+                            "Error: " + compEx.getMessage(),
+                            Map.of("error", compEx.getMessage()));
+                    }
                 } else {
                     testAndSuggestFixesForAllComponents(sessionId, repoPath, testList);
                 }
@@ -565,7 +584,7 @@ public class ComponentTestWorkflowController {
             } finally {
                 SessionContext.clear();
             }
-        });
+        }, workflowExecutor);
 
         return emitter;
     }
@@ -602,7 +621,7 @@ public class ComponentTestWorkflowController {
         // Register emitter with publisher
         sseEventPublisher.registerEmitter(sessionId, emitter);
 
-        // Execute workflow asynchronously
+        // Execute workflow asynchronously using dedicated executor (not ForkJoinPool)
         CompletableFuture.runAsync(() -> {
             try {
                 // Set session context for this thread
@@ -622,7 +641,7 @@ public class ComponentTestWorkflowController {
                 // Collect results for all components
                 List<WorkflowResult.ComponentTestResult> componentResults = new ArrayList<>();
 
-                // Process components from request body
+                // Process components from request body SEQUENTIALLY (one at a time)
                 if (request.component() != null && !request.component().isEmpty()) {
                     for (int i = 0; i < request.component().size(); i++) {
                         SuggestFixesRequest.ComponentInfo comp = request.component().get(i);
@@ -634,24 +653,33 @@ public class ComponentTestWorkflowController {
                             i + 1,
                             request.component().size());
 
-                        WorkflowResult.ComponentTestResult result = testAndSuggestFixesForComponent(
-                            sessionId,
-                            request.repoPath(),
-                            comp.name(),
-                            testList,
-                            comp.tsPath(),
-                            comp.htmlPath(),
-                            comp.stylesPath(),
-                            comp.relativePath(),
-                            i,
-                            request.component().size()
-                        );
+                        try {
+                            WorkflowResult.ComponentTestResult result = testAndSuggestFixesForComponent(
+                                sessionId,
+                                request.repoPath(),
+                                comp.name(),
+                                testList,
+                                comp.tsPath(),
+                                comp.htmlPath(),
+                                comp.stylesPath(),
+                                comp.relativePath(),
+                                i,
+                                request.component().size()
+                            );
 
-                        if (result != null) {
-                            componentResults.add(result);
+                            if (result != null) {
+                                componentResults.add(result);
 
-                            // Emit component-result event
-                            sseEventPublisher.publishWorkflowComponentResult(sessionId, result);
+                                // Emit component-result event
+                                sseEventPublisher.publishWorkflowComponentResult(sessionId, result);
+                            }
+                        } catch (Exception compEx) {
+                            // Log component-level error but continue with other components
+                            log.error("Error testing component {}: {}", comp.name(), compEx.getMessage(), compEx);
+                            sseEventPublisher.publishComponentStatus(sessionId, comp.name(),
+                                "test", "failed",
+                                "Error: " + compEx.getMessage(),
+                                Map.of("error", compEx.getMessage()));
                         }
                     }
                 } else {
@@ -672,7 +700,7 @@ public class ComponentTestWorkflowController {
             } finally {
                 SessionContext.clear();
             }
-        });
+        }, workflowExecutor);
 
         return emitter;
     }
@@ -894,6 +922,17 @@ public class ComponentTestWorkflowController {
                     .runAccessibilityTest(componentUrl, "AA")
                     .blockingGet();
 
+                // Handle error status from accessibility test
+                if ("error".equals(testResult.get("status"))) {
+                    String errorMsg = (String) testResult.getOrDefault("message", "Unknown error");
+                    log.error("Accessibility test failed for {}: {}", componentName, errorMsg);
+                    sseEventPublisher.publishComponentStatus(sessionId, componentName,
+                        testType, "failed",
+                        "Accessibility test failed: " + errorMsg,
+                        Map.of("error", errorMsg));
+                    return null;
+                }
+
                 if ("success".equals(testResult.get("status"))) {
                     List<Map<String, Object>> violations = (List<Map<String, Object>>) testResult.get("allViolations");
                     if (violations == null) {
@@ -978,6 +1017,17 @@ public class ComponentTestWorkflowController {
                     .runPerformanceTest(componentUrl, componentSelector)
                     .timeout(90, java.util.concurrent.TimeUnit.SECONDS)
                     .blockingGet();
+
+                // Handle error status from performance test
+                if ("error".equals(testResult.get("status"))) {
+                    String errorMsg = (String) testResult.getOrDefault("message", "Unknown error");
+                    log.error("Performance test failed for {}: {}", componentName, errorMsg);
+                    sseEventPublisher.publishComponentStatus(sessionId, componentName,
+                        testType, "failed",
+                        "Performance test failed: " + errorMsg,
+                        Map.of("error", errorMsg));
+                    return null;
+                }
 
                 if ("success".equals(testResult.get("status"))) {
                     Map<String, Object> metrics = (Map<String, Object>) testResult.get("metrics");

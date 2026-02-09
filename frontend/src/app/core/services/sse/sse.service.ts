@@ -63,9 +63,13 @@ export class SseService {
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
             },
             body: JSON.stringify(payload),
             signal: abortController.signal,
+            // Keep the connection alive for streaming
+            keepalive: false, // Note: keepalive: true can cause issues with streaming
           });
 
           if (!response.ok) {
@@ -97,10 +101,8 @@ export class SseService {
               if (event) {
                 observer.next(event);
 
-                if (event.type === 'completed' || event.type === 'error') {
-                  // Let the loop finish typically, or explicitly close if needed by protocol
-                  // For 'completed' we often want to stop listening.
-                  if (event.type === 'completed') {
+                if (event.type === 'completed' || event.type === 'done' || event.type === 'error') {
+                  if (event.type === 'completed' || event.type === 'done') {
                     this.closeConnection(url);
                     observer.complete();
                     return;

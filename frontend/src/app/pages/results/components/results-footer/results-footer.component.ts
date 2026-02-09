@@ -1,4 +1,4 @@
-import { Component, input, output, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ButtonComponent } from '../../../../shared/components/button/button.component';
 
 @Component({
@@ -7,7 +7,6 @@ import { ButtonComponent } from '../../../../shared/components/button/button.com
   imports: [ButtonComponent],
   templateUrl: './results-footer.component.html',
   styleUrl: './results-footer.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ResultsFooterComponent {
   isAnalyzing = input<boolean>(false);

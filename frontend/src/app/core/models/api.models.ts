@@ -93,10 +93,13 @@ export interface AutoFixConfig extends AnalysisConfig {
 // ============================================
 
 export type SSEEventType =
+  | 'connected'
+  | 'start'
   | 'started'
   | 'progress'
   | 'component_status'
   | 'fix_suggestion'
+  | 'tool_call'
   | 'completed'
   | 'error'
   | 'summary'
@@ -418,7 +421,7 @@ export interface TestComponentRequest {
 
 export interface ToolStatus {
   tool: string;
-  status: 'starting' | 'in-progress' | 'completed' | 'failed' | 'stopped';
+  status: 'starting' | 'running' | 'in-progress' | 'completed' | 'failed' | 'stopping' | 'stopped';
   message: string;
   metadata?: any;
   timestamp: number;

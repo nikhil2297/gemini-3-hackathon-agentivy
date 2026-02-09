@@ -1,4 +1,4 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { SpinnerComponent } from '../../../../shared/components/spinner/spinner.component';
 import { ToolStatus } from '../../../../core/models/api.models';
 import { formatToolName } from '../../../../shared/utils/formatters';
@@ -9,7 +9,6 @@ import { formatToolName } from '../../../../shared/utils/formatters';
   imports: [SpinnerComponent],
   templateUrl: './tool-timeline.component.html',
   styleUrl: './tool-timeline.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ToolTimelineComponent {
   tools = input.required<ToolStatus[]>();

@@ -1,4 +1,4 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { CodeBlockComponent } from '../../../../shared/components/code-block/code-block.component';
 import { ResultIssue } from '../../../../core/models/api.models';
 
@@ -8,7 +8,6 @@ import { ResultIssue } from '../../../../core/models/api.models';
   imports: [CodeBlockComponent],
   templateUrl: './accessibility-details.component.html',
   styleUrl: './accessibility-details.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AccessibilityDetailsComponent {
   details = input.required<{ file: string; issues: ResultIssue[] }[]>();

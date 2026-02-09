@@ -25,22 +25,87 @@ public class AngularProcessManager {
     private static final int MAX_LOG_LENGTH = 100_000;
 
     public void startDevServer(String repoPath, int port) throws Exception {
+        log.info("=== Starting dev server setup ===");
+        log.info("Repo path: {}", repoPath);
+        log.info("Target port: {}", port);
+
         stopServer(repoPath); // Ensure clean state
 
         Path projectPath = Path.of(repoPath);
 
+        // Check if npm is available
+        log.info("Checking npm availability...");
+        try {
+            ProcessBuilder checkNpm = createProcessBuilder("npm --version", projectPath);
+            Process npmCheck = checkNpm.start();
+
+            StringBuilder npmOutput = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(npmCheck.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    npmOutput.append(line);
+                }
+            }
+
+            boolean finished = npmCheck.waitFor(10, TimeUnit.SECONDS);
+            int exitCode = finished ? npmCheck.exitValue() : -1;
+            log.info("npm --version: finished={}, exitCode={}, output={}", finished, exitCode, npmOutput);
+
+            if (!finished || exitCode != 0) {
+                log.error("npm is NOT available! exitCode={}", exitCode);
+                throw new RuntimeException("npm check failed with exit code: " + exitCode);
+            }
+        } catch (Exception e) {
+            log.error("npm check FAILED: {}", e.getMessage(), e);
+            throw new RuntimeException("npm/npx is not available in this environment: " + e.getMessage(), e);
+        }
+
+        // Check if npx is available
+        log.info("Checking npx availability...");
+        try {
+            ProcessBuilder checkNpx = createProcessBuilder("npx --version", projectPath);
+            Process npxCheck = checkNpx.start();
+
+            StringBuilder npxOutput = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(npxCheck.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    npxOutput.append(line);
+                }
+            }
+
+            boolean finished = npxCheck.waitFor(10, TimeUnit.SECONDS);
+            int exitCode = finished ? npxCheck.exitValue() : -1;
+            log.info("npx --version: finished={}, exitCode={}, output={}", finished, exitCode, npxOutput);
+
+            if (!finished || exitCode != 0) {
+                log.warn("npx check returned non-zero exit code: {}", exitCode);
+            }
+        } catch (Exception e) {
+            log.warn("npx check issue: {}", e.getMessage());
+        }
+
         // Auto-detect package manager and use appropriate command
         String command = packageManagerDetector.getServeCommand(projectPath, port);
-        log.info("Starting dev server with command: {}", command);
+        log.info("=== Starting ng serve process ===");
+        log.info("Command: {}", command);
 
         ProcessBuilder pb = createProcessBuilder(command, projectPath);
-        Process process = pb.start();
+        Process process;
+        try {
+            process = pb.start();
+            log.info("Process started successfully, PID: {}", process.pid());
+        } catch (Exception e) {
+            log.error("Failed to start ng serve process: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to start ng serve: " + e.getMessage(), e);
+        }
 
         StringBuilder outputCapture = new StringBuilder();
         processOutputs.put(repoPath, outputCapture);
         runningProcesses.put(repoPath, process);
 
         captureOutput(process, outputCapture);
+        log.info("Output capture thread started");
     }
 
     public void stopServer(String repoPath) {
@@ -63,12 +128,26 @@ public class AngularProcessManager {
     }
 
     public void runNpmInstall(Path projectPath) throws Exception {
+        // Validate project path exists
+        if (!java.nio.file.Files.exists(projectPath)) {
+            throw new RuntimeException("Project path does not exist: " + projectPath);
+        }
+        if (!java.nio.file.Files.exists(projectPath.resolve("package.json"))) {
+            throw new RuntimeException("No package.json found in: " + projectPath);
+        }
+
         // Auto-detect package manager and use appropriate install command
         String installCommand = packageManagerDetector.getInstallCommand(projectPath);
-        log.info("Installing dependencies with command: {}", installCommand);
+        log.info("Installing dependencies with command: {} in directory: {}", installCommand, projectPath);
 
         ProcessBuilder pb = createProcessBuilder(installCommand, projectPath);
-        Process process = pb.start();
+        Process process;
+        try {
+            process = pb.start();
+        } catch (Exception e) {
+            log.error("Failed to start install process: {}", e.getMessage());
+            throw new RuntimeException("Failed to start package manager (" + installCommand.split(" ")[0] + "): " + e.getMessage(), e);
+        }
 
         // Capture output for debugging
         StringBuilder installOutput = new StringBuilder();
@@ -86,10 +165,14 @@ public class AngularProcessManager {
 
         boolean finished = process.waitFor(300, TimeUnit.SECONDS);
         if (!finished) {
-            throw new RuntimeException("Installation timed out after 5 minutes");
+            process.destroyForcibly();
+            throw new RuntimeException("Installation timed out after 5 minutes. Partial output:\n" + installOutput);
         }
         if (process.exitValue() != 0) {
-            throw new RuntimeException("Installation failed. Output:\n" + installOutput.toString());
+            String output = installOutput.toString();
+            log.error("Installation failed with exit code {}. Output:\n{}", process.exitValue(), output);
+            throw new RuntimeException("Installation failed (exit code " + process.exitValue() + "). Output:\n" +
+                (output.length() > 2000 ? output.substring(output.length() - 2000) : output));
         }
 
         log.info("Dependencies installed successfully");

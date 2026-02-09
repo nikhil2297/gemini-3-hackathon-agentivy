@@ -58,12 +58,30 @@ public class PlaywrightTools implements ToolProvider {
         try {
             log.info("Initializing Playwright browser (headless: {})", headless);
             playwright = Playwright.create();
-            browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
+
+            // Build launch options
+            BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
                     .setHeadless(headless)
-                    .setTimeout(timeoutMs));
+                    .setTimeout(timeoutMs);
+
+            // In Docker/Linux, use the system-installed Chromium if PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH is set
+            String chromiumPath = System.getenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH");
+            if (chromiumPath != null && !chromiumPath.isEmpty()) {
+                log.info("Using system Chromium from: {}", chromiumPath);
+                launchOptions.setExecutablePath(java.nio.file.Path.of(chromiumPath));
+                // Additional args for running in Docker container
+                launchOptions.setArgs(java.util.List.of(
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu"
+                ));
+            }
+
+            browser = playwright.chromium().launch(launchOptions);
             log.info("Playwright browser initialized successfully");
         } catch (Exception e) {
-            log.error("Failed to initialize Playwright: {}", e.getMessage());
+            log.error("Failed to initialize Playwright: {}", e.getMessage(), e);
             playwrightEnabled = false;
         }
     }

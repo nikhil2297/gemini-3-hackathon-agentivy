@@ -72,68 +72,36 @@
       </div>
     </section>
 
-    <!-- Test Options Grid -->
-    <div class="configure-grid">
-      <!-- Test Types Section -->
-      <section class="configure-section">
-        <div class="configure-section__header">
-          <h2 class="configure-section__title">Test Types</h2>
-          <p class="configure-section__subtitle">Select one or more test types</p>
-        </div>
+    <!-- Test Types Section -->
+    <section class="configure-section">
+      <div class="configure-section__header">
+        <h2 class="configure-section__title">Test Types</h2>
+        <p class="configure-section__subtitle">Select one or more test types</p>
+      </div>
 
-        <div class="test-options">
-          @for (testType of testTypes; track testType.value) {
-            <button
-              type="button"
-              class="option-card"
-              [class.option-card--selected]="isTestTypeSelected(testType.value)"
-              (click)="toggleTestType(testType.value)"
-            >
-              <div class="option-card__checkbox">
-                @if (isTestTypeSelected(testType.value)) {
-                  <svg class="option-card__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                    <path d="M5 12l5 5L20 7"/>
-                  </svg>
-                }
-              </div>
-              <div class="option-card__content">
-                <h3 class="option-card__title">{{ testType.label }}</h3>
-                <p class="option-card__description">{{ testType.description }}</p>
-              </div>
-            </button>
-          }
-        </div>
-      </section>
-
-      <!-- Action Mode Section -->
-      <section class="configure-section">
-        <div class="configure-section__header">
-          <h2 class="configure-section__title">Action Mode</h2>
-          <p class="configure-section__subtitle">Choose how to handle test results</p>
-        </div>
-
-        <div class="action-modes">
-          @for (mode of actionModes; track mode.value) {
-            <button
-              type="button"
-              class="option-card"
-              [class.option-card--selected]="selectedActionMode() === mode.value"
-              (click)="selectActionMode(mode.value)"
-            >
-              <div class="option-card__radio">
-                @if (selectedActionMode() === mode.value) {
-                  <span class="option-card__radio-dot"></span>
-                }
-              </div>
-              <div class="option-card__content">
-                <h3 class="option-card__title">{{ mode.label }}</h3>
-                <p class="option-card__description">{{ mode.description }}</p>
-              </div>
-            </button>
-          }
-        </div>
-      </section>
-    </div>
+      <div class="test-options">
+        @for (testType of testTypes; track testType.value) {
+          <button
+            type="button"
+            class="option-card"
+            [class.option-card--selected]="isTestTypeSelected(testType.value)"
+            (click)="toggleTestType(testType.value)"
+          >
+            <div class="option-card__checkbox">
+              @if (isTestTypeSelected(testType.value)) {
+                <svg class="option-card__check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <path d="M5 12l5 5L20 7"/>
+                </svg>
+              }
+            </div>
+            <div class="option-card__content">
+              <h3 class="option-card__title">{{ testType.label }}</h3>
+              <p class="option-card__description">{{ testType.description }}</p>
+            </div>
+          </button>
+        }
+      </div>
+    </section>
 
     <!-- Actions -->
     <div class="configure-page__actions">

@@ -310,23 +310,64 @@ public class AngularDevServerTool implements ToolProvider {
 
     private ImmutableMap<String, Object> waitForServer(String repoPath, String url, Path projectPath) {
         long deadline = System.currentTimeMillis() + (TIMEOUT_SECONDS * 1000L);
+        long startTime = System.currentTimeMillis();
+        long gracePeriodMs = 15000; // 15 seconds grace period before checking for errors
+        int checkCount = 0;
+
+        // Get component name for status updates
+        String componentName = SessionContext.getCurrentComponent() != null
+            ? SessionContext.getCurrentComponent()
+            : "DevServer";
+
+        log.info("=== waitForServer started ===");
+        log.info("URL to check: {}", url);
+        log.info("Grace period: {}ms", gracePeriodMs);
+        log.info("Timeout: {}s", TIMEOUT_SECONDS);
 
         while (System.currentTimeMillis() < deadline) {
-            if (!processManager.isServerProcessAlive(repoPath)) {
+            checkCount++;
+            long elapsed = System.currentTimeMillis() - startTime;
+            boolean processAlive = processManager.isServerProcessAlive(repoPath);
+
+            log.info("Check #{}: elapsed={}ms, processAlive={}", checkCount, elapsed, processAlive);
+
+            if (!processAlive) {
+                log.error("Process died unexpectedly! Getting final output...");
+                String finalOutput = processManager.getServerOutput(repoPath);
+                log.error("Final process output (last 1000 chars): {}",
+                    finalOutput.length() > 1000 ? finalOutput.substring(finalOutput.length() - 1000) : finalOutput);
                 return buildFailureResponse(repoPath, projectPath, "Process died unexpectedly");
             }
 
             String output = processManager.getServerOutput(repoPath);
+            log.debug("Current output length: {} chars", output.length());
 
-            // Fast Fail: Check logs for errors immediately
-            if (logParser.hasCompilationErrors(output)) {
-                // Give it 2 more seconds to accumulate all errors, then fail
+            // Log output snippet every 3 checks for debugging
+            if (checkCount % 3 == 0 && !output.isEmpty()) {
+                String snippet = output.length() > 500 ? output.substring(output.length() - 500) : output;
+                log.info("Output snippet (last 500 chars): {}", snippet);
+            }
+
+            // Only check for errors AFTER grace period to avoid false positives from startup messages
+            boolean hasErrors = logParser.hasCompilationErrors(output);
+            boolean pastGracePeriod = elapsed > gracePeriodMs;
+
+            log.debug("Error check: elapsed={}ms, pastGrace={}, hasErrors={}", elapsed, pastGracePeriod, hasErrors);
+
+            if (pastGracePeriod && hasErrors) {
+                log.error("Compilation errors detected after grace period!");
+                log.error("Output causing error detection (last 1500 chars): {}",
+                    output.length() > 1500 ? output.substring(output.length() - 1500) : output);
                 try { Thread.sleep(2000); } catch (Exception ignored) {}
                 return buildFailureResponse(repoPath, projectPath, "Compilation errors detected");
             }
 
             // Success: Check URL
-            if (checkUrl(url)) {
+            boolean urlReachable = checkUrl(url);
+            log.debug("URL check: reachable={}", urlReachable);
+
+            if (urlReachable) {
+                log.info("SUCCESS! Server is ready at {} after {}ms", url, elapsed);
                 return ImmutableMap.<String, Object>builder()
                         .put("status", "success")
                         .put("serverUrl", url)
@@ -334,9 +375,26 @@ public class AngularDevServerTool implements ToolProvider {
                         .build();
             }
 
+            // Publish progress every 2 checks (4 seconds) to keep SSE connection alive
+            if (checkCount % 2 == 0) {
+                int elapsedSeconds = (int) (elapsed / 1000);
+                eventPublisher.publishComponentStatus(
+                    componentName,
+                    "dev-server",
+                    "in-progress",
+                    "Waiting for Angular compilation... (" + elapsedSeconds + "s)",
+                    Map.of(
+                        "phase", "compilation",
+                        "elapsedSeconds", elapsedSeconds,
+                        "maxSeconds", TIMEOUT_SECONDS
+                    )
+                );
+            }
+
             try { Thread.sleep(2000); } catch (InterruptedException e) { break; }
         }
 
+        log.error("TIMEOUT waiting for server after {}s", TIMEOUT_SECONDS);
         return buildFailureResponse(repoPath, projectPath, "Timeout waiting for server");
     }
 

@@ -4,7 +4,9 @@ const TOOL_NAME_MAP: Record<string, string> = {
   'dev-server': 'Dev Server',
   'metadata': 'Metadata Extraction',
   'harness': 'Test Harness',
+  'deployment': 'Deployment',
   'accessibility': 'Accessibility Test',
+  'accessibility-fix': 'AI Fix Generation',
   'performance': 'Performance Test',
   'ai-suggestion': 'AI Fix Suggestion',
 };
@@ -29,10 +31,12 @@ export function mapToolStatusToBadge(status: string): ComponentStatus {
   switch (status) {
     case 'completed':
     case 'stopped':
+    case 'stopping':
       return 'passed';
     case 'failed':
       return 'failed';
     case 'starting':
+    case 'running':
     case 'in-progress':
       return 'running';
     default:

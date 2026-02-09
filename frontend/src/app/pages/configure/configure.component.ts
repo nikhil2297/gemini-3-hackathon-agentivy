@@ -3,8 +3,7 @@ import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../shared/components/button/button.component';
 import { WorkflowStateService } from '../../core/services/state/workflow-state.service';
-import { AnalysisService } from '../../core/services/api/analysis.service';
-import { TestType, ActionMode } from '../../core/models/api.models';
+import { TestType } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-configure',
@@ -15,13 +14,11 @@ import { TestType, ActionMode } from '../../core/models/api.models';
 })
 export class ConfigureComponent implements OnInit {
   private readonly workflowState = inject(WorkflowStateService);
-  private readonly analysisService = inject(AnalysisService);
   private readonly router = inject(Router);
 
   repoInfo = computed(() => this.workflowState.repoInfo());
   selectedComponents = computed(() => this.workflowState.selectedComponents());
   selectedTests = computed(() => this.workflowState.selectedTests());
-  selectedActionMode = computed(() => this.workflowState.actionMode());
 
   availableComponents = computed(() => {
     const all = this.repoInfo()?.availableComponents || [];
@@ -39,24 +36,6 @@ export class ConfigureComponent implements OnInit {
       value: 'performance' as TestType,
       label: 'Performance Testing',
       description: 'Analyze render time, bundle size, and performance metrics',
-    },
-  ];
-
-  actionModes = [
-    {
-      value: 'report' as ActionMode,
-      label: 'Test Report Only',
-      description: 'Generate a detailed report of all issues found',
-    },
-    {
-      value: 'suggest' as ActionMode,
-      label: 'Report + Suggested Fix',
-      description: 'Get AI-powered suggestions for fixing detected issues',
-    },
-    {
-      value: 'autofix' as ActionMode,
-      label: 'Report + Auto Fix',
-      description: 'Automatically apply fixes to detected issues',
     },
   ];
 
@@ -87,10 +66,6 @@ export class ConfigureComponent implements OnInit {
     this.workflowState.toggleTest(testType);
   }
 
-  selectActionMode(mode: ActionMode): void {
-    this.workflowState.setActionMode(mode);
-  }
-
   goBack(): void {
     this.router.navigate(['/']);
   }
@@ -98,6 +73,7 @@ export class ConfigureComponent implements OnInit {
   startTesting(): void {
     if (!this.canStartTesting()) return;
 
+    this.workflowState.setActionMode('suggest');
     this.workflowState.setAnalyzing(true);
     this.router.navigate(['/results']);
   }

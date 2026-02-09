@@ -1,4 +1,4 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { PerformanceMetrics } from '../../../../core/models/api.models';
 import { formatBytes } from '../../../../shared/utils/formatters';
 
@@ -7,7 +7,6 @@ import { formatBytes } from '../../../../shared/utils/formatters';
   standalone: true,
   templateUrl: './performance-metrics.component.html',
   styleUrl: './performance-metrics.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PerformanceMetricsComponent {
   metrics = input.required<PerformanceMetrics>();

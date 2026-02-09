@@ -33,6 +33,19 @@ public class SseEventPublisher {
         sessionEmitters.computeIfAbsent(sessionId, k -> new CopyOnWriteArrayList<>()).add(emitter);
         log.info("Registered SSE emitter for session: {}", sessionId);
 
+        // Send initial connection event
+        try {
+            emitter.send(SseEmitter.event()
+                .name("connected")
+                .data(Map.of(
+                    "sessionId", sessionId,
+                    "status", "connected",
+                    "timestamp", System.currentTimeMillis()
+                )));
+        } catch (IOException e) {
+            log.warn("Failed to send initial connection event for session: {}", sessionId, e);
+        }
+
         // Auto-cleanup on completion or timeout
         emitter.onCompletion(() -> {
             removeEmitter(sessionId, emitter);

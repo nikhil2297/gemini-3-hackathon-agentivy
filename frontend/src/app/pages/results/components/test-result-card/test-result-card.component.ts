@@ -1,4 +1,4 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { StatusBadgeComponent } from '../../../../shared/components/status-badge/status-badge.component';
 import { CodeBlockComponent } from '../../../../shared/components/code-block/code-block.component';
 import { AccessibilityViolationsComponent } from '../accessibility-violations/accessibility-violations.component';
@@ -18,7 +18,6 @@ import { TestResult } from '../../../../core/models/api.models';
   ],
   templateUrl: './test-result-card.component.html',
   styleUrl: './test-result-card.component.css',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TestResultCardComponent {
   result = input.required<TestResult>();

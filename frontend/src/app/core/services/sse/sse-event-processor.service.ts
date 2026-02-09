@@ -8,7 +8,6 @@ import {
   ComponentStatus,
   SuggestFixConfig,
   TestType,
-  SSESummaryEvent,
   ToolStatus,
   GroupedComponentResult,
 } from '../../models/api.models';
@@ -58,8 +57,12 @@ export class SseEventProcessorService {
     this.sseSubscription = this.sseService.connectToSuggestFixes(config).subscribe({
       next: (event) => {
         switch (event.type) {
+          case 'connected':
+            this.handleConnected(event.data);
+            break;
+          case 'start':
           case 'started':
-            this.handleStarted();
+            this.handleStarted(event.data);
             break;
           case 'progress':
             this.handleProgress(event.data);
@@ -70,12 +73,14 @@ export class SseEventProcessorService {
           case 'fix_suggestion':
             this.handleFixSuggestion(event.data);
             break;
+          case 'tool_call':
+            break;
           case 'component-result':
           case 'component_result':
             this.handleComponentResult(event.data);
             break;
           case 'summary':
-            this.handleSummary(event);
+            this.handleSummary(event.data);
             break;
           case 'done':
           case 'completed':
@@ -113,9 +118,14 @@ export class SseEventProcessorService {
 
   // --- Private event handlers ---
 
-  private handleStarted(): void {
-    this.progressLabel.set('Analysis started');
-    this.currentStatus.set('Connecting to server...');
+  private handleConnected(data: any): void {
+    this.currentStatus.set('Connected to server');
+    this.progressLabel.set('Connected');
+  }
+
+  private handleStarted(data: any): void {
+    this.progressLabel.set(data?.message || 'Analysis started');
+    this.currentStatus.set(data?.message || 'Starting analysis...');
   }
 
   private handleProgress(data: any): void {
@@ -134,14 +144,20 @@ export class SseEventProcessorService {
 
     if (data.tool === 'accessibility' || data.tool === 'performance') {
       if (data.status === 'completed') {
-        this.createOrUpdateTestResult(data);
+        // Use tool name as testType if testType is not explicitly set
+        const enrichedData = { ...data, testType: data.testType || data.tool };
+        this.createOrUpdateTestResult(enrichedData);
       }
     }
 
-    if (data.testType) {
+    const testType = data.testType || (
+      (data.tool === 'accessibility' || data.tool === 'performance') ? data.tool : null
+    );
+
+    if (testType) {
       this.workflowState.updateComponentStatus(
         data.componentName,
-        data.testType,
+        testType,
         data.status
       );
     }
@@ -194,6 +210,36 @@ export class SseEventProcessorService {
 
         this.createOrUpdateTestResultFromRichEvent(testResult);
       }
+
+      if (result.performance) {
+        const perf = result.performance;
+        const perfDetails = perf.details || [];
+        const perfScore = perf.score ?? 0;
+        const initialLoad = perfDetails[0]?.initialLoad || perf.initialLoad || {};
+        const runtime = perfDetails[0]?.runtime || perf.runtime || {};
+
+        const testResult: TestResult = {
+          componentName,
+          testType: 'performance',
+          status: perf.status === 'warning' ? 'serious' : perf.status as ComponentStatus,
+          timestamp: data.timestamp || Date.now(),
+          perfScore: perfScore,
+          metrics: {
+            loadTime: initialLoad.loadTime || 0,
+            renderTime: initialLoad.renderTime || 0,
+            tti: initialLoad.timeToInteractive || 0,
+            performanceScore: perfScore,
+            memoryUsage: runtime.initialMemoryMB ? runtime.initialMemoryMB * 1024 * 1024 : undefined,
+          },
+          violations: {
+            violationCount: perf.violations?.total || 0,
+            warningCount: 0,
+            violations: []
+          }
+        };
+
+        this.createOrUpdateTestResultFromRichEvent(testResult);
+      }
     } else if (data.testResults && data.componentName) {
       const componentName = data.componentName;
       const status = data.status === 'accessibility-issues' ? 'failed' : 'passed';
@@ -213,10 +259,11 @@ export class SseEventProcessorService {
     }
   }
 
-  private handleSummary(event: any): void {
-    if (!event.data) return;
-    const summaryEvent = event as unknown as SSESummaryEvent;
-    this.workflowState.setSummary(summaryEvent.summary);
+  private handleSummary(data: any): void {
+    if (!data) return;
+    // SSE data format: { summary: { repoId, summary: { totalComponents, overallStatus, ... } } }
+    const summaryData = data.summary?.summary || data.summary || data;
+    this.workflowState.setSummary(summaryData);
   }
 
   private handleCompleted(): void {
@@ -278,7 +325,7 @@ export class SseEventProcessorService {
     if (results.some(r => r.status === 'serious')) return 'serious';
 
     const hasRunningTools = tools.some(t =>
-      t.status === 'starting' || t.status === 'in-progress'
+      t.status === 'starting' || t.status === 'in-progress' || t.status === 'running'
     );
 
     if (hasRunningTools && results.length === 0) return 'running';
@@ -318,38 +365,62 @@ export class SseEventProcessorService {
       r => r.componentName === componentName && r.testType === testType
     );
 
-    let status: ComponentStatus = 'passed';
+    let status: ComponentStatus = metadata.passed === false ? 'failed' : 'passed';
     if (metadata.violationCount > 0 || (metadata.violations && metadata.violations.length > 0)) {
       status = 'failed';
     }
-    if (metadata.performanceScore && metadata.performanceScore < 50) {
+    if (testType === 'accessibility' && metadata.severityCounts?.critical > 0) {
       status = 'serious';
     }
+    if (metadata.performanceScore !== undefined && metadata.performanceScore < 50) {
+      status = 'serious';
+    }
+
+    // Performance metadata has initialLoad nested
+    const initialLoad = metadata.initialLoad || {};
+    const runtime = metadata.runtime || {};
 
     const testResult: TestResult = {
       componentName,
       testType,
       status,
       timestamp: data.timestamp || Date.now(),
+      a11yScore: testType === 'accessibility' ? metadata.score || metadata.complianceScore : undefined,
+      perfScore: testType === 'performance' ? metadata.performanceScore : undefined,
       violations: testType === 'accessibility' ? {
-        violationCount: metadata.violationCount || 0,
+        violationCount: metadata.violationCount || metadata.totalViolations || 0,
         warningCount: metadata.warningCount || 0,
         violations: metadata.violations || [],
       } : undefined,
       metrics: testType === 'performance' ? {
-        loadTime: metadata.loadTime || 0,
-        renderTime: metadata.renderTime || 0,
-        tti: metadata.tti || 0,
+        loadTime: initialLoad.loadTime || metadata.loadTime || 0,
+        renderTime: initialLoad.renderTime || metadata.renderTime || 0,
+        tti: initialLoad.timeToInteractive || metadata.tti || 0,
         performanceScore: metadata.performanceScore || 0,
         bundleSize: metadata.bundleSize,
-        memoryUsage: metadata.memoryUsage,
+        memoryUsage: runtime.initialMemoryMB ? runtime.initialMemoryMB * 1024 * 1024 : metadata.memoryUsage,
         fps: metadata.fps,
       } : undefined,
     };
 
     if (existingIndex >= 0) {
+      const existing = existingResults[existingIndex];
       const updatedResults = [...existingResults];
-      updatedResults[existingIndex] = testResult;
+      // Preserve richer data from previous events (details, violations list)
+      const mergedResult = { ...existing, ...testResult };
+      if (existing.details && existing.details.length > 0 && (!testResult.details || testResult.details.length === 0)) {
+        mergedResult.details = existing.details;
+      }
+      if (existing.violations?.violations && existing.violations.violations.length > 0 &&
+          (!testResult.violations?.violations || testResult.violations.violations.length === 0)) {
+        mergedResult.violations = { ...mergedResult.violations!, violations: existing.violations.violations };
+      }
+      if (existing.suggestedFix && !testResult.suggestedFix) {
+        mergedResult.suggestedFix = existing.suggestedFix;
+        mergedResult.explanation = existing.explanation;
+        mergedResult.filePath = existing.filePath;
+      }
+      updatedResults[existingIndex] = mergedResult;
       this.workflowState.setResults(updatedResults);
     } else {
       this.workflowState.setResults([...existingResults, testResult]);

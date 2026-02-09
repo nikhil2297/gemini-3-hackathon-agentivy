@@ -40,7 +40,7 @@ export class WorkflowStateService {
   /**
    * Selected action mode (report, suggest, autofix)
    */
-  readonly actionMode = signal<ActionMode>('report');
+  readonly actionMode = signal<ActionMode>('suggest');
 
   /**
    * Test results for all components
@@ -338,7 +338,7 @@ export class WorkflowStateService {
     this.repoInfo.set(null);
     this.selectedComponents.set([]);
     this.selectedTests.set([]);
-    this.actionMode.set('report');
+    this.actionMode.set('suggest');
     this.results.set([]);
     this.fixSuggestions.set([]);
     this.isAnalyzing.set(false);

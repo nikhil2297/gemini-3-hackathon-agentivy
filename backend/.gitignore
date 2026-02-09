@@ -42,4 +42,5 @@ out/
 ### Extra Ignored Files ###
 .claude
 nul
+.env
 

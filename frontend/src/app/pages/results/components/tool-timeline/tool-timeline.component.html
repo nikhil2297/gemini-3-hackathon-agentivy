@@ -3,10 +3,10 @@
   @for (tool of tools(); track tool.tool + tool.timestamp) {
   <div class="timeline-item" [class]="'timeline-item--' + tool.status">
     <div class="timeline-marker">
-      @if (tool.status === 'starting' || tool.status === 'in-progress') {
+      @if (tool.status === 'starting' || tool.status === 'in-progress' || tool.status === 'running') {
       <app-spinner size="sm" />
-      } @else if (tool.status === 'completed' || tool.status === 'stopped') {
-      <span class="status-icon status-icon--success">{{ tool.status === 'stopped' ? '■' : '✓' }}</span>
+      } @else if (tool.status === 'completed' || tool.status === 'stopped' || tool.status === 'stopping') {
+      <span class="status-icon status-icon--success">{{ tool.status === 'stopped' || tool.status === 'stopping' ? '■' : '✓' }}</span>
       } @else if (tool.status === 'failed') {
       <span class="status-icon status-icon--error">✕</span>
       }
@@ -17,7 +17,7 @@
         <span class="tool-status">{{ tool.status }}</span>
       </div>
       <p class="timeline-message">{{ tool.message }}</p>
-      @if (tool.metadata && tool.status === 'in-progress' && tool.metadata.progressPercent) {
+      @if (tool.metadata && (tool.status === 'in-progress' || tool.status === 'running') && tool.metadata.progressPercent) {
       <div class="timeline-progress">
         <div class="progress-bar-mini">
           <div class="progress-fill" [style.width.%]="tool.metadata.progressPercent"></div>

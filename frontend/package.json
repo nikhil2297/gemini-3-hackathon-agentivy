@@ -35,7 +35,7 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular/build": "^21.0.0",
+    "@angular/build": "^22.1.5",
     "@angular/cli": "^21.0.0",
     "@angular/compiler-cli": "^21.0.0",
     "autoprefixer": "^10.4.23",
@@ -43,6 +43,6 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.2",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.11"
   }
 }
